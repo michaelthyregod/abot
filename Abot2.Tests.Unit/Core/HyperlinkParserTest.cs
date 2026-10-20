@@ -393,10 +393,9 @@ namespace Abot2.Tests.Unit.Core
         }
 
         [TestMethod]
-        [ExpectedException(typeof(ArgumentNullException))]
         public void GetLinks_NullCrawledPage_ThrowsException()
         {
-            _unitUnderTest.GetLinks(null);
+            Assert.ThrowsExactly<ArgumentNullException>(() => _unitUnderTest.GetLinks(null));
         }
 
         [TestMethod, Ignore("Not sure how to handle this just yet")]

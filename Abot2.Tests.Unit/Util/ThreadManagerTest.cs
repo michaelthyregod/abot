@@ -33,17 +33,15 @@ namespace Abot2.Tests.Unit.Util
         }
 
         [TestMethod]
-        [ExpectedException(typeof(ArgumentException))]
         public void Constructor_OverMax_ThrowsException()
         {
-            GetInstance(101);
+            Assert.ThrowsExactly<ArgumentException>(() => GetInstance(101));
         }
 
         [TestMethod]
-        [ExpectedException(typeof(ArgumentException))]
         public void Constructor_BelowMinimum()
         {
-            GetInstance(0);
+            Assert.ThrowsExactly<ArgumentException>(() => GetInstance(0));
         }
 
         [TestMethod]
@@ -122,19 +120,17 @@ namespace Abot2.Tests.Unit.Util
         }
 
         [TestMethod]
-        [ExpectedException(typeof(ArgumentNullException))]
         public void DoWork_ActionIsNull_ThrowsException()
         {
-            _unitUnderTest.DoWork(null);
+            Assert.ThrowsExactly<ArgumentNullException>(() => _unitUnderTest.DoWork(null));
         }
 
         [TestMethod]
-        [ExpectedException(typeof(InvalidOperationException))]
         public void DoWork_CalledAfterAbortAll_ThrowsException()
         {
             _unitUnderTest.AbortAll();
 
-            _unitUnderTest.DoWork(() => System.Threading.Thread.Sleep(10));
+            Assert.ThrowsExactly<InvalidOperationException>(() => _unitUnderTest.DoWork(() => System.Threading.Thread.Sleep(10)));
         }
 
         [TestMethod]

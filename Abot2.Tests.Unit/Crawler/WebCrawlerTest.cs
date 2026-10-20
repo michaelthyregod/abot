@@ -114,10 +114,9 @@ namespace Abot2.Tests.Unit.Crawler
 
 
         [TestMethod]
-        [ExpectedException(typeof(ArgumentNullException))]
         public async Task Crawl_NullUri_ThrowsException()
         {
-            await _unitUnderTest.CrawlAsync(null);
+            await Assert.ThrowsExactlyAsync<ArgumentNullException>(() => _unitUnderTest.CrawlAsync(null));
         }
 
         [TestMethod]

@@ -12,8 +12,7 @@ namespace Abot2.Tests.Unit.Core
         public void Constructor_ZeroCrawlDelay_NoException() => new DomainRateLimiter(0);
 
         [TestMethod]
-        [ExpectedException(typeof(ArgumentException))]
-        public void Constructor_NegativeCrawlDelay_ThrowsException() => new DomainRateLimiter(-1);
+        public void Constructor_NegativeCrawlDelay_ThrowsException() => Assert.ThrowsExactly<ArgumentException>(() => new DomainRateLimiter(-1));
         
 
         [TestMethod]
@@ -85,21 +84,17 @@ namespace Abot2.Tests.Unit.Core
         }
 
         [TestMethod]
-        [ExpectedException(typeof(ArgumentNullException))]
-        public void RateLimit_NullUri() => new DomainRateLimiter(1000).RateLimit(null);
+        public void RateLimit_NullUri() => Assert.ThrowsExactly<ArgumentNullException>(() => new DomainRateLimiter(1000).RateLimit(null));
 
 
         [TestMethod]
-        [ExpectedException(typeof(ArgumentNullException))]
-        public void AddDomain_NullUri() => new DomainRateLimiter(1000).AddDomain(null, 100);
+        public void AddDomain_NullUri() => Assert.ThrowsExactly<ArgumentNullException>(() => new DomainRateLimiter(1000).AddDomain(null, 100));
 
         [TestMethod]
-        [ExpectedException(typeof(ArgumentException))]
-        public void AddDomain_ZeroCrawlDelay() => new DomainRateLimiter(1000).AddDomain(new Uri("http://a.com"), 0);
+        public void AddDomain_ZeroCrawlDelay() => Assert.ThrowsExactly<ArgumentException>(() => new DomainRateLimiter(1000).AddDomain(new Uri("http://a.com"), 0));
 
         [TestMethod]
-        [ExpectedException(typeof(ArgumentException))]
-        public void AddDomain_NegativeCrawlDelay() => new DomainRateLimiter(1000).AddDomain(new Uri("http://a.com"), -1);
+        public void AddDomain_NegativeCrawlDelay() => Assert.ThrowsExactly<ArgumentException>(() => new DomainRateLimiter(1000).AddDomain(new Uri("http://a.com"), -1));
 
         [TestMethod]
         public void AddDomain_ParamLessThanDefault_UsesDefault()
@@ -160,16 +155,13 @@ namespace Abot2.Tests.Unit.Core
 
 
         [TestMethod]
-        [ExpectedException(typeof(ArgumentNullException))]
-        public void AddOrUpdateDomain_NullUri() => new DomainRateLimiter(1000).AddOrUpdateDomain(null, 100);
+        public void AddOrUpdateDomain_NullUri() => Assert.ThrowsExactly<ArgumentNullException>(() => new DomainRateLimiter(1000).AddOrUpdateDomain(null, 100));
 
         [TestMethod]
-        [ExpectedException(typeof(ArgumentException))]
-        public void AddOrUpdateDomain_ZeroCrawlDelay() => new DomainRateLimiter(1000).AddOrUpdateDomain(new Uri("http://a.com"), 0);
+        public void AddOrUpdateDomain_ZeroCrawlDelay() => Assert.ThrowsExactly<ArgumentException>(() => new DomainRateLimiter(1000).AddOrUpdateDomain(new Uri("http://a.com"), 0));
 
         [TestMethod]
-        [ExpectedException(typeof(ArgumentException))]
-        public void AddOrUpdateDomain_NegativeCrawlDelay() => new DomainRateLimiter(1000).AddOrUpdateDomain(new Uri("http://a.com"), -1);
+        public void AddOrUpdateDomain_NegativeCrawlDelay() => Assert.ThrowsExactly<ArgumentException>(() => new DomainRateLimiter(1000).AddOrUpdateDomain(new Uri("http://a.com"), -1));
 
         [TestMethod]
         public void AddOrUpdateDomain_ParamLessThanDefault_UsesDefault()

@@ -25,12 +25,10 @@ namespace Abot2.Tests.Unit.Core
         }
 
         [TestMethod]
-        [ExpectedException(typeof(ArgumentNullException))]
-        public void Constructor_PageRequesterIsNull() => new RobotsDotTextFinder(null);
+        public void Constructor_PageRequesterIsNull() => Assert.ThrowsExactly<ArgumentNullException>(() => new RobotsDotTextFinder(null));
 
         [TestMethod]
-        [ExpectedException(typeof(ArgumentNullException))]
-        public async Task Find_NullUrl() => await _uut.FindAsync(null);
+        public async Task Find_NullUrl() => await Assert.ThrowsExactlyAsync<ArgumentNullException>(() => _uut.FindAsync(null));
 
         [TestMethod]
         public async Task Find_RobotsExists_UriIsDomain_ReturnsRobotsDotText()

@@ -46,11 +46,10 @@ namespace Abot2.Tests.Unit.Core
 
 
         [TestMethod]
-        [ExpectedException(typeof(ArgumentNullException))]
         public void Add_NullPage()
         {
             PageToCrawl nullPage = null;
-            _unitUnderTest.Add(nullPage);
+            Assert.ThrowsExactly<ArgumentNullException>(() => _unitUnderTest.Add(nullPage));
         }
 
         [TestMethod]
@@ -100,11 +99,10 @@ namespace Abot2.Tests.Unit.Core
 
 
         [TestMethod]
-        [ExpectedException(typeof(ArgumentNullException))]
         public void Add_NullPages()
         {
             IEnumerable<PageToCrawl> nullPages = null;
-            _unitUnderTest.Add(nullPages);
+            Assert.ThrowsExactly<ArgumentNullException>(() => _unitUnderTest.Add(nullPages));
         }
 
         [TestMethod]

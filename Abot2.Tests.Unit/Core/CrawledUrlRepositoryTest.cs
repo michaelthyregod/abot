@@ -72,7 +72,7 @@ namespace Abot2.Tests.Unit.Core
                 foreach (var input in inputs)
                 {
                     if (!uut.Contains(input))
-                        Assert.Fail("False negative: {0}", input);
+                        Assert.Fail($"False negative: {input}");
                 }
             }
         }

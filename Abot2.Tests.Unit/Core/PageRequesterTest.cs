@@ -30,24 +30,21 @@ namespace Abot2.Tests.Unit.Core
         }
 
         [TestMethod]
-        [ExpectedException(typeof(ArgumentNullException))]
         public void Constructor_NullConfig()
         {
-            new PageRequester(null, _fakeWebContentExtractor.Object);
+            Assert.ThrowsExactly<ArgumentNullException>(() => new PageRequester(null, _fakeWebContentExtractor.Object));
         }
 
         [TestMethod]
-        [ExpectedException(typeof(ArgumentNullException))]
         public void Constructor_NullContentExtractor()
         {
-            new PageRequester(_crawlConfig, null);
+            Assert.ThrowsExactly<ArgumentNullException>(() => new PageRequester(_crawlConfig, null));
         }
 
         [TestMethod]
-        [ExpectedException(typeof(ArgumentNullException))]
         public async Task MakeRequestAsync_NullUri()
         {
-            await _unitUnderTest.MakeRequestAsync(null);
+            await Assert.ThrowsExactlyAsync<ArgumentNullException>(() => _unitUnderTest.MakeRequestAsync(null));
         }
 
         [TestMethod]
