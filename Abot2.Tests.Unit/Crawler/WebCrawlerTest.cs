@@ -192,6 +192,57 @@ namespace Abot2.Tests.Unit.Crawler
             Assert.IsTrue(result.CrawlContext.IsCrawlHardStopRequested);
         }
 
+        [TestMethod]
+        public async Task Crawl_ExceptionThrownGettingNextPageFromScheduler_SetsCrawlResultError()
+        {
+            var ex = new Exception("oh no");
+            var getNextCalled = false;
+            var fakeScheduler = new Mock<IScheduler>();
+            fakeScheduler.Setup(f => f.Count).Returns(() => Volatile.Read(ref getNextCalled) ? 0 : 1);
+            fakeScheduler.Setup(f => f.GetNext()).Callback(() => Volatile.Write(ref getNextCalled, true)).Throws(ex);
+            _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
+            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyThreadManager, fakeScheduler.Object, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
+
+            var result = await _unitUnderTest.CrawlAsync(_rootUri);
+
+            _fakeHttpRequester.Verify(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>()), Times.Never());
+            Assert.IsTrue(result.ErrorOccurred);
+            Assert.AreSame(ex, result.ErrorException);
+            Assert.IsTrue(result.CrawlContext.IsCrawlHardStopRequested);
+        }
+
+        [TestMethod]
+        public async Task Crawl_ExceptionThrownByAddPageToContextOverride_SetsCrawlResultError()
+        {
+            var ex = new Exception("oh no");
+            _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
+            _unitUnderTest = new AddPageToContextThrowsCrawler(ex, _dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyThreadManager, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
+
+            var result = await _unitUnderTest.CrawlAsync(_rootUri);
+
+            _fakeHttpRequester.Verify(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>()), Times.Never());
+            Assert.IsTrue(result.ErrorOccurred);
+            Assert.AreSame(ex, result.ErrorException);
+            Assert.AreEqual(0, _dummyScheduler.Count);
+            Assert.IsTrue(result.CrawlContext.IsCrawlHardStopRequested);
+        }
+
+        private class AddPageToContextThrowsCrawler : PoliteWebCrawler
+        {
+            readonly Exception _exception;
+
+            public AddPageToContextThrowsCrawler(Exception exception, CrawlConfiguration crawlConfiguration, ICrawlDecisionMaker crawlDecisionMaker, IThreadManager threadManager, IScheduler scheduler, IPageRequester pageRequester, IHtmlParser htmlParser, IMemoryManager memoryManager, IDomainRateLimiter domainRateLimiter, IRobotsDotTextFinder robotsDotTextFinder)
+                : base(crawlConfiguration, crawlDecisionMaker, threadManager, scheduler, pageRequester, htmlParser, memoryManager, domainRateLimiter, robotsDotTextFinder)
+            {
+                _exception = exception;
+            }
+
+            protected override void AddPageToContext(PageToCrawl pageToCrawl)
+            {
+                throw _exception;
+            }
+        }
+
         #region Synchronous Event Tests
 
         [TestMethod]

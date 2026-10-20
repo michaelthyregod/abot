@@ -355,8 +355,8 @@ namespace Abot2.Crawler
                 if (linksToScheduleCount > 0)
                 {
                     Log.Debug($"There are [{linksToScheduleCount}] links to schedule...");
-                    //DoWork takes an Action so this lambda is async void, an exception escaping it would crash the process.
-                    //Cancellation is already logged by ProcessPage and reported on the crawl result by CheckForCancellationRequest().
+                    //DoWork takes an Action so this lambda is async void, an exception escaping it would crash the process
+                    //(the thread manager's own try/catch never sees it), so nothing may escape.
                     _threadManager.DoWork(async () =>
                     {
                         try
@@ -365,6 +365,16 @@ namespace Abot2.Crawler
                         }
                         catch (OperationCanceledException)
                         {
+                            //Already logged by ProcessPage and reported on the crawl result by CheckForCancellationRequest()
+                        }
+                        catch (Exception e)
+                        {
+                            //ProcessPage handles its own errors, this catches the scheduler, AddPageToContext() and ProcessPage() overrides
+                            _crawlResult.ErrorException = e;
+                            Log.Fatal("Error occurred while getting or processing the next page for site [{0}]", _crawlContext.RootUri);
+                            Log.Fatal(e, "Exception details -->");
+
+                            _crawlContext.IsCrawlHardStopRequested = true;
                         }
                     });
                 }
