@@ -889,7 +889,7 @@ namespace Abot2.Tests.Unit.Crawler
             Assert.IsTrue(result.CrawlContext.IsCrawlHardStopRequested);
         }
 
-        [TestMethod, Ignore("Having issues with this test")]
+        [TestMethod]
         public async Task Crawl_ExtractedLinksAreNotCheckedTwice()
         {
             var fakeLink1 = new Uri("http://a.com/someUri");
@@ -911,7 +911,6 @@ namespace Abot2.Tests.Unit.Crawler
             _fakeHttpRequester.Setup(f => f.MakeRequestAsync(_rootUri, It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(homePage));
             _fakeHttpRequester.Setup(f => f.MakeRequestAsync(fakeLink1, It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(page1));
             _fakeHttpRequester.Setup(f => f.MakeRequestAsync(fakeLink2, It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(page2));
-            _fakeCrawlDecisionMaker.Setup(f => f.ShouldRecrawlPage(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.Is<PageToCrawl>(p => p.Uri == fakeLink3), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = false });
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPageLinks(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision {Allow = true});

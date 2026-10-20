@@ -398,14 +398,14 @@ namespace Abot2.Tests.Unit.Core
             Assert.ThrowsExactly<ArgumentNullException>(() => _unitUnderTest.GetLinks(null));
         }
 
-        [TestMethod, Ignore("Not sure how to handle this just yet")]
+        [TestMethod]
         public void GetLinks_ResponseUriDiffFromRequestUri_UsesResponseUri()
         {
             _crawledPage.Content.Text = "<a href=\"/aaa/a.html\" ></a><a href=\"/bbb/b.html\" /></a>";
-            
-            //This sets the Address properties backing field which does not have a public set method
-            //ValueHelper.SetFieldValue(_crawledPage.HttpWebRequest, "_Uri", new Uri("http://zzz.com/"));
-            
+
+            //HttpClient updates the request message's RequestUri to the final uri when it follows a redirect
+            _crawledPage.HttpRequestMessage.RequestUri = new Uri("http://zzz.com/");
+
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
             Assert.AreEqual(2, result.Count());

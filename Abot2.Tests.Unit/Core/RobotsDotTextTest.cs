@@ -222,7 +222,7 @@ Disallow: /?category=another&color=red");
             Assert.IsTrue(_unitUnderTest.IsUrlAllowed(_rootUri.AbsoluteUri, userAgentString));
         }
 
-        [TestMethod, Ignore("This is a bug and needs to be fixed")]
+        [TestMethod]
         public void IsUrlAllowed_QuerystringOnRoot2_ReturnsTrue()
         {
             string userAgentString = _userAgentString;
