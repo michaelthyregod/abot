@@ -12,53 +12,34 @@ namespace Abot2.Tests.Unit.Util
             return new TaskThreadManager(maxThreads);
         }
 
-        [TestMethod]
-        public void AbortAll_WorkNeverCompleted()
-        {
-            var cancellationTokenSource = new CancellationTokenSource();   
-            var uut = new TaskThreadManager(10, cancellationTokenSource);
-
-            var count = 0;
-            uut.DoWork(() => { System.Threading.Thread.Sleep(50); Interlocked.Increment(ref count); });
-            uut.DoWork(() => { System.Threading.Thread.Sleep(50); Interlocked.Increment(ref count); });
-            uut.DoWork(() => { System.Threading.Thread.Sleep(50); Interlocked.Increment(ref count); });
-            uut.DoWork(() => { System.Threading.Thread.Sleep(50); Interlocked.Increment(ref count); });
-            uut.DoWork(() => { System.Threading.Thread.Sleep(50); Interlocked.Increment(ref count); });
-            uut.DoWork(() => { System.Threading.Thread.Sleep(50); Interlocked.Increment(ref count); });
-            uut.DoWork(() => { System.Threading.Thread.Sleep(50); Interlocked.Increment(ref count); });
-            uut.DoWork(() => { System.Threading.Thread.Sleep(50); Interlocked.Increment(ref count); });
-            uut.DoWork(() => { System.Threading.Thread.Sleep(50); Interlocked.Increment(ref count); });
-            uut.DoWork(() => { System.Threading.Thread.Sleep(50); Interlocked.Increment(ref count); });
-
-            //cancellationTokenSource.Cancel();
-            uut.AbortAll();
-
-            System.Threading.Thread.Sleep(600);
-            Assert.IsTrue(count < 10, "Completed all 10 tasks but should not have");
-        }
+        //Cancellation only stops work that has not started yet, work already running is not interrupted. These tests used to cancel
+        //right after queuing work and assert some of it never ran, which raced the thread pool and failed whenever the test thread
+        //was delayed for a millisecond before cancelling. They now only assert what cancellation actually guarantees.
 
         [TestMethod]
-        public void DoWork_TokenCanceled_WorkNeverCompleted()
+        public void AbortAll_CancelsTokenSource()
         {
             var cancellationTokenSource = new CancellationTokenSource();
             var uut = new TaskThreadManager(10, cancellationTokenSource);
 
-            var count = 0;
-            uut.DoWork(() => { System.Threading.Thread.Sleep(50); Interlocked.Increment(ref count); });
-            uut.DoWork(() => { System.Threading.Thread.Sleep(50); Interlocked.Increment(ref count); });
-            uut.DoWork(() => { System.Threading.Thread.Sleep(50); Interlocked.Increment(ref count); });
-            uut.DoWork(() => { System.Threading.Thread.Sleep(50); Interlocked.Increment(ref count); });
-            uut.DoWork(() => { System.Threading.Thread.Sleep(50); Interlocked.Increment(ref count); });
-            uut.DoWork(() => { System.Threading.Thread.Sleep(50); Interlocked.Increment(ref count); });
-            uut.DoWork(() => { System.Threading.Thread.Sleep(50); Interlocked.Increment(ref count); });
-            uut.DoWork(() => { System.Threading.Thread.Sleep(50); Interlocked.Increment(ref count); });
-            uut.DoWork(() => { System.Threading.Thread.Sleep(50); Interlocked.Increment(ref count); });
-            uut.DoWork(() => { System.Threading.Thread.Sleep(50); Interlocked.Increment(ref count); });
+            uut.AbortAll();
 
+            Assert.IsTrue(cancellationTokenSource.IsCancellationRequested);
+        }
+
+        [TestMethod]
+        public void DoWork_TokenCanceled_WorkNeverStarts()
+        {
+            var cancellationTokenSource = new CancellationTokenSource();
+            var uut = new TaskThreadManager(10, cancellationTokenSource);
             cancellationTokenSource.Cancel();
 
-            System.Threading.Thread.Sleep(600);
-            Assert.IsTrue(count < 10, "Completed all 10 tasks but should not have");
+            var count = 0;
+            for (var i = 0; i < 5; i++)
+                uut.DoWork(() => Interlocked.Increment(ref count));
+
+            System.Threading.Thread.Sleep(200);
+            Assert.AreEqual(0, count);
         }
     }
 }
