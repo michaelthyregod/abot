@@ -5,6 +5,8 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
+using System.Net.Http;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
@@ -224,13 +226,14 @@ namespace Abot2.Tests.Unit.Poco
         }
 
         [TestMethod]
-        public async Task ToString_HttpResponseExists_MessageHasUriAndStatus()
+        public void ToString_HttpResponseExists_MessageHasUriAndStatus()
         {
-            var result =
-                await new PageRequester(new CrawlConfiguration(), new WebContentExtractor()).MakeRequestAsync(
-                    new Uri("http://google.com/"));
+            var unitUnderTest = new CrawledPage(new Uri("http://a.com/"))
+            {
+                HttpResponseMessage = new HttpResponseMessage(HttpStatusCode.OK)
+            };
 
-            Assert.AreEqual("http://google.com/[200]", result.ToString());
+            Assert.AreEqual("http://a.com/[200]", unitUnderTest.ToString());
         }
 
         [TestMethod]

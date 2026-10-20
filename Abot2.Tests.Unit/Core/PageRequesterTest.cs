@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Net;
 using System.Net.Http;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Abot2.Core;
@@ -248,34 +249,89 @@ namespace Abot2.Tests.Unit.Core
         }
 
         [TestMethod]
-        public async Task MakeRequestAsync_RealCall_ReturnsExpectedCrawledPageObject()
+        public async Task MakeRequestAsync_NoHttpClientInjected_BuildsClientFromConfigAndReturnsExpectedCrawledPageObject()
         {
             //Arrange
-            var unitUnderTest = new PageRequester(
-                new CrawlConfiguration()
-                {
-                    IsSslCertificateValidationEnabled = false,
-                    IsAlwaysLogin = true,
-                    IsHttpRequestAutomaticDecompressionEnabled = true,
-                    IsSendingCookiesEnabled = true,
-                    HttpProtocolVersion = HttpProtocolVersion.Version10
-                }, 
-                new WebContentExtractor());
-            var google = new Uri("https://google.com/");
+            var config = new CrawlConfiguration
+            {
+                IsSslCertificateValidationEnabled = false,
+                IsAlwaysLogin = true,
+                LoginUser = "user",
+                LoginPassword = "pass",
+                IsHttpRequestAutomaticDecompressionEnabled = true,
+                IsSendingCookiesEnabled = true,
+                HttpProtocolVersion = HttpProtocolVersion.Version10
+            };
+            const string html = "<html><body>hello</body></html>";
+            var unitUnderTest = new InMemoryPageRequester(config, html);
 
             //Act
-            var result = await unitUnderTest.MakeRequestAsync(google);
+            var result = await unitUnderTest.MakeRequestAsync(_validUri);
 
             //Assert
             Assert.IsNull(result.HttpRequestException);
-            Assert.AreSame(google, result.Uri);
-            Assert.IsNotNull(result.HttpRequestMessage);
-            Assert.IsNotNull(result.HttpResponseMessage);
-            Assert.IsNotNull(result.Content);
+            Assert.AreSame(_validUri, result.Uri);
+            Assert.AreEqual(HttpStatusCode.OK, result.HttpResponseMessage.StatusCode);
+            Assert.AreEqual(html, result.Content.Text);
 
-            Assert.AreNotEqual("", result.Content.Text);
+            var sentRequest = unitUnderTest.Handler.SentRequest;
+            Assert.AreEqual(_validUri, sentRequest.RequestUri);
+            Assert.AreEqual(HttpVersion.Version10, sentRequest.Version);
+            Assert.IsTrue(sentRequest.Headers.Contains("User-Agent"));
+            Assert.AreEqual("Basic " + Convert.ToBase64String(Encoding.ASCII.GetBytes("user:pass")), sentRequest.Headers.Authorization.ToString());
+
+            var configuredHandler = unitUnderTest.ConfiguredHandler;
+            Assert.AreEqual(DecompressionMethods.GZip | DecompressionMethods.Deflate, configuredHandler.AutomaticDecompression);
+            Assert.IsTrue(configuredHandler.UseCookies);
+            Assert.IsNotNull(configuredHandler.ServerCertificateCustomValidationCallback);
+            Assert.IsNotNull(configuredHandler.Credentials);
 
             unitUnderTest.Dispose();
+            configuredHandler.Dispose();
+        }
+
+        /// <summary>
+        /// Runs the real handler and client building from config but answers requests in memory so the test never touches the network
+        /// </summary>
+        private class InMemoryPageRequester : PageRequester
+        {
+            public InMemoryPageRequester(CrawlConfiguration config, string responseHtml)
+                : base(config, new WebContentExtractor())
+            {
+                Handler = new InMemoryHttpClientHandler(responseHtml);
+            }
+
+            public InMemoryHttpClientHandler Handler { get; }
+
+            public HttpClientHandler ConfiguredHandler { get; private set; }
+
+            protected override HttpClientHandler BuildHttpClientHandler(Uri rootUri)
+            {
+                ConfiguredHandler = base.BuildHttpClientHandler(rootUri);
+                return Handler;
+            }
+        }
+
+        private class InMemoryHttpClientHandler : HttpClientHandler
+        {
+            private readonly string _responseHtml;
+
+            public InMemoryHttpClientHandler(string responseHtml)
+            {
+                _responseHtml = responseHtml;
+            }
+
+            public HttpRequestMessage SentRequest { get; private set; }
+
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            {
+                SentRequest = request;
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    RequestMessage = request,
+                    Content = new StringContent(_responseHtml, Encoding.UTF8, "text/html")
+                });
+            }
         }
     }
 }
