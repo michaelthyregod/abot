@@ -1,9 +1,12 @@
 ﻿using Abot2.Core;
 using Abot2.Poco;
+using AngleSharp.Dom;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace Abot2.Tests.Unit.Poco
@@ -92,6 +95,65 @@ namespace Abot2.Tests.Unit.Poco
 
             Assert.IsNotNull(unitUnderTest.AngleSharpHtmlDocument);
             Assert.IsTrue(unitUnderTest.AngleSharpHtmlDocument.Body.TextContent.Length > 0);
+            Assert.IsTrue(GetMaxDepth(unitUnderTest.AngleSharpHtmlDocument) <= CrawledPage.MaxHtmlDocumentDepth);
+        }
+
+        [TestMethod]
+        public void AngleSharpHtmlDocument_NestedDeeperThanMax_FlattensAndKeepsTextOrderAndLinks()
+        {
+            //Each nesting level adds a digit on the way in and on the way out so the text order shows whether flattening kept document order
+            const int levels = 2000;
+            var html = new StringBuilder();
+            var expectedText = new StringBuilder();
+            for (var i = 0; i < levels; i++)
+            {
+                html.Append("<div>").Append(i % 10);
+                expectedText.Append(i % 10);
+            }
+            html.Append("<a href=\"http://a.com/deep\">link</a>");
+            expectedText.Append("link");
+            for (var i = levels - 1; i >= 0; i--)
+            {
+                html.Append(i % 10).Append("</div>");
+                expectedText.Append(i % 10);
+            }
+
+            var unitUnderTest = new CrawledPage(new Uri("http://a.com/"))
+            {
+                Content = new PageContent
+                {
+                    Text = html.ToString()
+                }
+            };
+
+            Assert.AreEqual(expectedText.ToString(), unitUnderTest.AngleSharpHtmlDocument.Body.TextContent);
+            Assert.AreEqual(levels, unitUnderTest.AngleSharpHtmlDocument.QuerySelectorAll("div").Length);
+            Assert.AreEqual("http://a.com/deep", unitUnderTest.AngleSharpHtmlDocument.QuerySelector("a").GetAttribute("href"));
+            Assert.IsTrue(GetMaxDepth(unitUnderTest.AngleSharpHtmlDocument) <= CrawledPage.MaxHtmlDocumentDepth);
+            Assert.IsTrue(unitUnderTest.AngleSharpHtmlDocument.DocumentElement.OuterHtml.Contains("<a href=\"http://a.com/deep\">link</a>"));
+        }
+
+        [TestMethod]
+        public void AngleSharpHtmlDocument_NestedShallowerThanMax_IsNotFlattened()
+        {
+            const int levels = 100;
+            var html = new StringBuilder();
+            for (var i = 0; i < levels; i++)
+                html.Append("<div>");
+            html.Append("text");
+            for (var i = 0; i < levels; i++)
+                html.Append("</div>");
+
+            var unitUnderTest = new CrawledPage(new Uri("http://a.com/"))
+            {
+                Content = new PageContent
+                {
+                    Text = html.ToString()
+                }
+            };
+
+            //document > html > body > 100 divs > text
+            Assert.AreEqual(levels + 3, GetMaxDepth(unitUnderTest.AngleSharpHtmlDocument));
         }
 
 
@@ -121,7 +183,7 @@ namespace Abot2.Tests.Unit.Poco
             };
 
             Assert.IsNotNull(unitUnderTest.AngleSharpHtmlDocument);
-            Assert.IsTrue(unitUnderTest.AngleSharpHtmlDocument.ToString().Length > 1);
+            Assert.IsTrue(unitUnderTest.AngleSharpHtmlDocument.DocumentElement.OuterHtml.Length > 1);
         }
 
         [TestMethod]
@@ -136,7 +198,7 @@ namespace Abot2.Tests.Unit.Poco
             };
 
             Assert.IsNotNull(unitUnderTest.AngleSharpHtmlDocument);
-            Assert.IsTrue(unitUnderTest.AngleSharpHtmlDocument.ToString().Length > 1);
+            Assert.IsTrue(unitUnderTest.AngleSharpHtmlDocument.DocumentElement.OuterHtml.Length > 1);
         }
 
         [TestMethod]
@@ -192,6 +254,22 @@ namespace Abot2.Tests.Unit.Poco
                 throw new ApplicationException("Cannot find file " + fileName);
 
             return File.ReadAllText(testFile);
+        }
+
+        private int GetMaxDepth(INode root)
+        {
+            var max = 0;
+            var pending = new Stack<(INode Node, int Depth)>();
+            pending.Push((root, 0));
+            while (pending.Count > 0)
+            {
+                var (node, depth) = pending.Pop();
+                max = Math.Max(max, depth);
+                foreach (var child in node.ChildNodes)
+                    pending.Push((child, depth + 1));
+            }
+
+            return max;
         }
     }
 }

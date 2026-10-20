@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Net.Http;
+using AngleSharp.Dom;
 using AngleSharp.Html.Dom;
 using AngleSharp.Html.Parser;
 using Serilog;
@@ -9,6 +10,17 @@ namespace Abot2.Poco
 {
     public class CrawledPage : PageToCrawl
     {
+        /// <summary>
+        /// Max node nesting depth kept in AngleSharpHtmlDocument, the same limit Chrome's html parser uses. Overly deep paths are flattened
+        /// into siblings (keeping document order) so recursive AngleSharp members like TextContent and ToHtml() can't overflow the stack.
+        /// </summary>
+        public const int MaxHtmlDocumentDepth = 512;
+
+        /// <summary>
+        /// Subtrees up to this height are moved whole when flattening, so small structures like links keep their content
+        /// </summary>
+        const int KeepIntactSubtreeHeight = 64;
+
         HtmlParser _angleSharpHtmlParser;
 
         readonly Lazy<IHtmlDocument> _angleSharpHtmlDocument;
@@ -104,6 +116,7 @@ namespace Abot2.Poco
             try
             {
                 document = _angleSharpHtmlParser.ParseDocument(Content.Text);
+                FlattenNodesDeeperThan(document, MaxHtmlDocumentDepth);
             }
             catch (Exception e)
             {
@@ -113,6 +126,89 @@ namespace Abot2.Poco
             }
 
             return document;
+        }
+
+        /// <summary>
+        /// Iteratively walks the tree and flattens the descendants of any node at depth (maxDepth - KeepIntactSubtreeHeight - 1)
+        /// so that no node ends up deeper than maxDepth
+        /// </summary>
+        private static void FlattenNodesDeeperThan(INode root, int maxDepth)
+        {
+            var flattenDepth = maxDepth - KeepIntactSubtreeHeight - 1;
+            var pending = new Stack<(INode Node, int Depth)>();
+            pending.Push((root, 0));
+            while (pending.Count > 0)
+            {
+                var (node, depth) = pending.Pop();
+                if (depth == flattenDepth)
+                {
+                    FlattenDescendants(node);
+                    continue;
+                }
+
+                foreach (var child in node.ChildNodes)
+                    pending.Push((child, depth + 1));
+            }
+        }
+
+        /// <summary>
+        /// Re-parents node's descendants as its direct children in document order. Subtrees no taller than KeepIntactSubtreeHeight
+        /// are moved whole (so an anchor keeps its text), only the nodes on overly deep paths are emptied and lifted up
+        /// </summary>
+        private static void FlattenDescendants(INode node)
+        {
+            var descendants = new List<INode>();
+            var pending = new Stack<INode>();
+            for (var i = node.ChildNodes.Length - 1; i >= 0; i--)
+                pending.Push(node.ChildNodes[i]);
+
+            while (pending.Count > 0)
+            {
+                var current = pending.Pop();
+                descendants.Add(current);
+                for (var i = current.ChildNodes.Length - 1; i >= 0; i--)
+                    pending.Push(current.ChildNodes[i]);
+            }
+
+            //Reverse document order visits children before their parent
+            var heights = new Dictionary<INode, int>();
+            var tallestChild = 0;
+            for (var i = descendants.Count - 1; i >= 0; i--)
+            {
+                var height = 0;
+                foreach (var child in descendants[i].ChildNodes)
+                    height = Math.Max(height, heights[child] + 1);
+
+                heights[descendants[i]] = height;
+                if (descendants[i].Parent == node)
+                    tallestChild = Math.Max(tallestChild, height);
+            }
+
+            if (tallestChild <= KeepIntactSubtreeHeight)
+                return;
+
+            //Short subtrees are kept whole, tall nodes are lifted out of their subtree and their children processed in turn
+            var lifted = new List<INode>();
+            for (var i = node.ChildNodes.Length - 1; i >= 0; i--)
+                pending.Push(node.ChildNodes[i]);
+
+            while (pending.Count > 0)
+            {
+                var current = pending.Pop();
+                lifted.Add(current);
+                if (heights[current] <= KeepIntactSubtreeHeight)
+                    continue;
+
+                for (var i = current.ChildNodes.Length - 1; i >= 0; i--)
+                    pending.Push(current.ChildNodes[i]);
+            }
+
+            //Detach in reverse so a tall node has already lost its children when it is removed, which keeps AngleSharp from walking a deep subtree
+            for (var i = lifted.Count - 1; i >= 0; i--)
+                lifted[i].Parent.RemoveChild(lifted[i]);
+
+            foreach (var liftedNode in lifted)
+                node.AppendChild(liftedNode);
         }
     }
 }
