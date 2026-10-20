@@ -352,7 +352,18 @@ namespace Abot2.Crawler
                 if (linksToScheduleCount > 0)
                 {
                     Log.Debug($"There are [{linksToScheduleCount}] links to schedule...");
-                    _threadManager.DoWork(async () => await ProcessPage(_scheduler.GetNext()));
+                    //DoWork takes an Action so this lambda is async void, an exception escaping it would crash the process.
+                    //Cancellation is already logged by ProcessPage and reported on the crawl result by CheckForCancellationRequest().
+                    _threadManager.DoWork(async () =>
+                    {
+                        try
+                        {
+                            await ProcessPage(_scheduler.GetNext());
+                        }
+                        catch (OperationCanceledException)
+                        {
+                        }
+                    });
                 }
                 else if (!_threadManager.HasRunningThreads() && _processingPageCount < 1)//Ok that _processingPageCount could be a race condition, will be caught on the next loop iteration
                 {
