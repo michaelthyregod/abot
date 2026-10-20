@@ -17,10 +17,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <Content Include="..\TestResponses.saz">
-        <Link>TestResponses.saz</Link>
-        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      </Content>
+      <FrameworkReference Include="Microsoft.AspNetCore.App" />
     </ItemGroup>
 
 </Project>
