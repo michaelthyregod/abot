@@ -103,6 +103,9 @@ namespace Abot2.Crawler
         protected int _processingPageCount = 0;
         private readonly object _processingPageCountLock = new object();
 
+        //Guards the MaxPagesToCrawl check, which reads CrawledCount + Scheduler.Count, against concurrent scheduling and dequeuing
+        private readonly object _scheduleLock = new object();
+
         #region Public properties
 
         /// <summary>
@@ -358,7 +361,7 @@ namespace Abot2.Crawler
                     {
                         try
                         {
-                            await ProcessPage(_scheduler.GetNext());
+                            await ProcessPage(GetNextPageToCrawl());
                         }
                         catch (OperationCanceledException)
                         {
@@ -394,8 +397,6 @@ namespace Abot2.Crawler
                     return;
 
                 ThrowIfCancellationRequested();
-
-                AddPageToContext(pageToCrawl);
 
                 var crawledPage = await CrawlThePage(pageToCrawl).ConfigureAwait(false);
 
@@ -598,10 +599,13 @@ namespace Abot2.Crawler
                 crawledPage.RedirectedTo = page;
                 Log.Debug("Page [{0}] is requesting that it be redirect to [{1}]", crawledPage.Uri, crawledPage.RedirectedTo.Uri);
 
-                if (ShouldSchedulePageLink(page))
+                lock (_scheduleLock)
                 {
-                    Log.Information("Page [{0}] will be redirect to [{1}]", crawledPage.Uri, crawledPage.RedirectedTo.Uri);
-                    _scheduler.Add(page);
+                    if (ShouldSchedulePageLink(page))
+                    {
+                        Log.Information("Page [{0}] will be redirect to [{1}]", crawledPage.Uri, crawledPage.RedirectedTo.Uri);
+                        _scheduler.Add(page);
+                    }
                 }
             }
             catch {}
@@ -755,6 +759,20 @@ namespace Abot2.Crawler
             return combinedBag;
         }
 
+        //Dequeues the page and counts it as crawled in one step, otherwise CrawledCount + Scheduler.Count briefly drops by one
+        //and a concurrent MaxPagesToCrawl check lets an extra page through
+        private PageToCrawl GetNextPageToCrawl()
+        {
+            lock (_scheduleLock)
+            {
+                var pageToCrawl = _scheduler.GetNext();
+                if (pageToCrawl != null)
+                    AddPageToContext(pageToCrawl);
+
+                return pageToCrawl;
+            }
+        }
+
         protected virtual void AddPageToContext(PageToCrawl pageToCrawl)
         {
             if (pageToCrawl.IsRetry)
@@ -790,10 +808,13 @@ namespace Abot2.Crawler
                         page.IsInternal = IsInternalUri(hyperLink.HrefValue);
                         page.IsRoot = false;
 
-                        if (ShouldSchedulePageLink(page))
+                        lock (_scheduleLock)
                         {
-                            _scheduler.Add(page);
-                            linksToCrawl++;
+                            if (ShouldSchedulePageLink(page))
+                            {
+                                _scheduler.Add(page);
+                                linksToCrawl++;
+                            }
                         }
 
                         if (!ShouldScheduleMorePageLink(linksToCrawl))
