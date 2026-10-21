@@ -10,7 +10,6 @@ using Serilog;
 
 namespace Abot2.Tests.Integration
 {
-    [TestClass]
     public abstract class CrawlTestBase
     {
         ConcurrentBag<PageResult> _actualCrawledPages = new ConcurrentBag<PageResult>();
@@ -23,7 +22,7 @@ namespace Abot2.Tests.Integration
             _maxSecondsToCrawl = maxSecondsToCrawl;
         }
 
-        public async Task CrawlAndAssert(IWebCrawler crawler)
+        protected async Task CrawlAndAssert(IWebCrawler crawler)
         {
             crawler.PageCrawlCompleted += crawler_PageCrawlCompleted;
 
@@ -40,7 +39,7 @@ namespace Abot2.Tests.Integration
             Assert.IsTrue(result.Elapsed.TotalSeconds < _maxSecondsToCrawl, string.Format("Elapsed Time to crawl {0}, over {1} second threshold", result.Elapsed.TotalSeconds, _maxSecondsToCrawl));
         }
 
-        protected abstract List<PageResult> GetExpectedCrawlResult();
+        private protected abstract List<PageResult> GetExpectedCrawlResult();
 
         private void PrintDescrepancies(List<Discrepancy> allDescrepancies)
         {
@@ -132,7 +131,7 @@ namespace Abot2.Tests.Integration
         }
     }
 
-    public class PageResult
+    internal class PageResult
     {
         public string Url { get; set; }
 
@@ -161,7 +160,7 @@ namespace Abot2.Tests.Integration
         }
     }
 
-    public class Discrepancy
+    internal class Discrepancy
     {
         public PageResult Expected { get; set; }
 
@@ -170,7 +169,7 @@ namespace Abot2.Tests.Integration
         public DiscrepencyType DiscrepencyType { get; set; }
     }
 
-    public enum DiscrepencyType
+    internal enum DiscrepencyType
     {
         UnexpectedPageInResult,
         UnexpectedHttpStatus,

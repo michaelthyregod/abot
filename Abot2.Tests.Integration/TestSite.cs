@@ -21,7 +21,7 @@ namespace Abot2.Tests.Integration
     /// The "external" pages are served by this same server under the other loopback name (localhost vs 127.0.0.1),
     /// which the crawler treats as a different domain, so all traffic stays on the machine.
     /// </summary>
-    public sealed class TestSite : IAsyncDisposable
+    internal sealed class TestSite : IAsyncDisposable
     {
         public const int GeneratorPageCount = 4;
         public const int ExternalPageCount = 2;

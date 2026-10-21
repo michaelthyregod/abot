@@ -6,7 +6,6 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Abot2.Tests.Unit.Util
 {
-    [TestClass]
     public abstract class ThreadManagerTest
     {
         IThreadManager _unitUnderTest;

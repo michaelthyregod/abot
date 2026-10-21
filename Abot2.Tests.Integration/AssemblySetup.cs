@@ -9,13 +9,13 @@ using Serilog;
 namespace Abot2.Tests.Integration
 {
     [TestClass]
-    public class SetupAssemblyInitializer
+    public static class SetupAssemblyInitializer
     {
         /// <summary>Test site that responds immediately</summary>
-        public static TestSite Site { get; private set; }
+        internal static TestSite Site { get; private set; }
 
         /// <summary>Test site that delays every response, for tests that need a crawl to still be running at a given time</summary>
-        public static TestSite SlowSite { get; private set; }
+        internal static TestSite SlowSite { get; private set; }
 
         [AssemblyInitialize]
         public static async Task AssemblyInit(TestContext context)

@@ -173,7 +173,7 @@ namespace Abot2.Tests.Integration
             await base.CrawlAndAssert(new PoliteWebCrawler(configuration));
         }
 
-        protected override List<PageResult> GetExpectedCrawlResult()
+        private protected override List<PageResult> GetExpectedCrawlResult()
         {
             return SetupAssemblyInitializer.Site.GetAllPages();
         }

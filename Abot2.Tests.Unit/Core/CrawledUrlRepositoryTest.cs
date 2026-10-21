@@ -5,7 +5,6 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Abot2.Tests.Unit.Core
 {
-    [TestClass]
     public abstract class CrawledUrlRepositoryTest
     {
         protected ICrawledUrlRepository _unitUnderTest;

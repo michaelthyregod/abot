@@ -8,7 +8,6 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Abot2.Tests.Unit.Core
 {
-    [TestClass]
     public abstract class HyperLinkParserTest
     {
         HyperLinkParser _unitUnderTest;
