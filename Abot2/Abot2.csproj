@@ -3,7 +3,7 @@
   <PropertyGroup>
     <TargetFrameworks>netstandard2.0;net10.0</TargetFrameworks>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-    <Version>2.0.0.8</Version>
+    <Version>3.0.0-preview.1</Version>
     <PackageId>Abot</PackageId>
     <Authors>Steven Jones</Authors>
     <Company>SHARPDEV LLC</Company>
@@ -16,8 +16,8 @@
     <PackageTags>crawler robot spider .net dotnet</PackageTags>
     <PackageProjectUrl>https://github.com/sjdirect/abot</PackageProjectUrl>
     <PackageReleaseNotes>Release notes may be found on https://github.com/sjdirect/abot</PackageReleaseNotes>
-    <AssemblyVersion>2.0.0.0</AssemblyVersion>
-    <FileVersion>2.0.0.0</FileVersion>
+    <AssemblyVersion>3.0.0.0</AssemblyVersion>
+    <FileVersion>3.0.0.0</FileVersion>
   </PropertyGroup>
 
   <!-- Keep the System.* pins below effective for netstandard2.0 instead of having the .NET 10 SDK prune them -->
