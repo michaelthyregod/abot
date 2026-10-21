@@ -39,6 +39,54 @@ namespace Abot2.Tests.Unit.Core
         }
 
         [TestMethod]
+        [DataRow(15, 15)]
+        [DataRow(1, 1)]
+        public void HttpRequestTimeoutInSeconds_Positive_IsTheClientTimeout(int setting, int expectedSeconds)
+        {
+            Assert.AreEqual(TimeSpan.FromSeconds(expectedSeconds), BuildClientTimeout(setting));
+        }
+
+        [TestMethod]
+        public void HttpRequestTimeoutInSeconds_Zero_LeavesHttpClientsDefault()
+        {
+            using (var defaultClient = new HttpClient())
+                Assert.AreEqual(defaultClient.Timeout, BuildClientTimeout(0));
+        }
+
+        [TestMethod]
+        public void HttpRequestTimeoutInSeconds_MinusOne_MeansNoTimeout()
+        {
+            Assert.AreEqual(Timeout.InfiniteTimeSpan, BuildClientTimeout(CrawlConfiguration.NoHttpRequestTimeout));
+        }
+
+        [TestMethod]
+        public void HttpRequestTimeoutInSeconds_BelowMinusOne_IsRejected()
+        {
+            var config = new CrawlConfiguration { HttpRequestTimeoutInSeconds = -2 };
+
+            Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new PageRequester(config, _fakeWebContentExtractor.Object));
+        }
+
+        //Builds the HttpClient the way PageRequester does for a request, without making one
+        private TimeSpan BuildClientTimeout(int httpRequestTimeoutInSeconds)
+        {
+            var config = new CrawlConfiguration { HttpRequestTimeoutInSeconds = httpRequestTimeoutInSeconds };
+            using (var unitUnderTest = new ClientBuildingPageRequester(config, _fakeWebContentExtractor.Object))
+            using (var client = unitUnderTest.Build())
+                return client.Timeout;
+        }
+
+        private sealed class ClientBuildingPageRequester : PageRequester
+        {
+            public ClientBuildingPageRequester(CrawlConfiguration config, IWebContentExtractor contentExtractor)
+                : base(config, contentExtractor)
+            {
+            }
+
+            public HttpClient Build() => BuildHttpClient(new HttpClientHandler());
+        }
+
+        [TestMethod]
         public void Constructor_NullContentExtractor()
         {
             Assert.ThrowsExactly<ArgumentNullException>(() => new PageRequester(_crawlConfig, null));

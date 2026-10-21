@@ -369,6 +369,20 @@ A crawler built with a fake clock only times out, finishes politeness and retry 
 
 `Constants.LogFormatTemplate` is now `static readonly`. Reading it works as before. Code that assigns it no longer compiles; use your own template string instead.
 
+### 5.10 Requests can run without a timeout
+
+`CrawlConfiguration.HttpRequestTimeoutInSeconds` can now be set to `-1` (`CrawlConfiguration.NoHttpRequestTimeout`) so that requests never time out. Use it, for example, when crawls are bounded by `CrawlTimeoutSeconds` or cancellation instead.
+
+The other values work as in 2.x: a positive value is the timeout in seconds (15 by default), and `0` leaves `HttpClient`'s own default of 100 seconds. Values below `-1` are now rejected: creating a `PageRequester` throws `ArgumentOutOfRangeException`. This includes the one the crawler creates when you don't pass your own. As before, the setting only applies to the `HttpClient` Abot creates, not to one you pass in.
+
+```csharp
+var config = new CrawlConfiguration
+{
+    HttpRequestTimeoutInSeconds = CrawlConfiguration.NoHttpRequestTimeout,   // -1: no timeout per request
+    CrawlTimeoutSeconds = 600                                                // the whole crawl still stops after 10 minutes
+};
+```
+
 ## 6. Async crawl engine and cancellation
 
 ### 6.1 Pages are processed by async workers; thread managers are obsolete

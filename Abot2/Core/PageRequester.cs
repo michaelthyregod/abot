@@ -44,6 +44,9 @@ namespace Abot2.Core
         public PageRequester(CrawlConfiguration config, IWebContentExtractor contentExtractor, HttpClient httpClient = null, TimeProvider timeProvider = null)
         {
             _config = config ?? throw new ArgumentNullException(nameof(config));
+            if (_config.HttpRequestTimeoutInSeconds < CrawlConfiguration.NoHttpRequestTimeout)
+                throw new ArgumentOutOfRangeException(nameof(config), _config.HttpRequestTimeoutInSeconds,
+                    "CrawlConfiguration.HttpRequestTimeoutInSeconds must be greater than 0, 0 for HttpClient's default timeout, or -1 for no timeout.");
 
             _contentExtractor = contentExtractor ?? throw new ArgumentNullException(nameof(contentExtractor));
 
@@ -245,6 +248,8 @@ namespace Abot2.Core
 
             if (_config.HttpRequestTimeoutInSeconds > 0)
                 httpClient.Timeout = TimeSpan.FromSeconds(_config.HttpRequestTimeoutInSeconds);
+            else if (_config.HttpRequestTimeoutInSeconds == CrawlConfiguration.NoHttpRequestTimeout)
+                httpClient.Timeout = Timeout.InfiniteTimeSpan;
 
             if (_config.IsAlwaysLogin)
             {

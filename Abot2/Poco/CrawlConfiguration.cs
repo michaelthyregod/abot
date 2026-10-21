@@ -99,8 +99,14 @@ namespace Abot2.Poco
         public int HttpServicePointConnectionLimit { get; set; }
 
         /// <summary>
-        /// Gets or sets the time-out value in seconds for the System.Net.HttpWebRequest.GetResponse() and System.Net.HttpWebRequest.GetRequestStream() methods.
-        /// If zero, this setting has no effect.
+        /// The value of <see cref="HttpRequestTimeoutInSeconds"/> that means requests never time out
+        /// </summary>
+        public const int NoHttpRequestTimeout = -1;
+
+        /// <summary>
+        /// Gets or sets how many seconds an http request may take before it times out. Applies to the HttpClient Abot creates, not to one you pass in.
+        /// If zero, Abot leaves HttpClient's own default (100 seconds). If -1 (<see cref="NoHttpRequestTimeout"/>), requests never time out.
+        /// Other negative values are rejected when a PageRequester is created.
         /// </summary>
         public int HttpRequestTimeoutInSeconds { get; set; }
 

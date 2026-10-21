@@ -18,10 +18,10 @@ namespace Abot2.Tests.Integration
 
         }
 
-        //The tests that do not test request timeouts leave HttpClient's own default (100 s) instead of the crawler's 15 s,
+        //The tests that do not test request timeouts have no request timeout instead of the crawler's 15 s,
         //so a slow first request on a busy machine (cold start, mostly on .NET Framework) cannot fail them.
         //Hangs are caught by the test timeout in testconfig.json.
-        const int NoCrawlerRequestTimeout = 0;
+        const int NoCrawlerRequestTimeout = CrawlConfiguration.NoHttpRequestTimeout;
 
         public TestContext TestContext { get; set; }
 
