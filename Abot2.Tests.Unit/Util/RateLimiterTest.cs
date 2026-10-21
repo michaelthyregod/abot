@@ -1,4 +1,5 @@
-﻿using Abot2.Util;
+﻿using System.Threading.Tasks;
+using Abot2.Util;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Diagnostics;
@@ -11,6 +12,8 @@ namespace Abot2.Tests.Unit.Util
     public class RateLimiterTest
     {
         RateLimiter _unitUnderTest;
+
+        public TestContext TestContext { get; set; }
 
         [TestMethod]
         public void Constructor_InvalidOccurrances()
@@ -95,7 +98,7 @@ namespace Abot2.Tests.Unit.Util
         }
 
         [TestMethod]
-        public void Dispose_CalledTwice_DoesNotThrow()
+        public async Task Dispose_CalledTwice_DoesNotThrow()
         {
             _unitUnderTest = new RateLimiter(1, TimeSpan.FromMilliseconds(10));
             _unitUnderTest.WaitToProceed();
@@ -104,7 +107,7 @@ namespace Abot2.Tests.Unit.Util
             _unitUnderTest.Dispose();
 
             //Give a timer callback that was already due the chance to run against the disposed instance
-            System.Threading.Thread.Sleep(50);
+            await Task.Delay(50, TestContext.CancellationToken);
         }
     }
 }

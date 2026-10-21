@@ -1,4 +1,5 @@
-﻿using Abot2.Util;
+﻿using System.Threading.Tasks;
+using Abot2.Util;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Threading;
 
@@ -30,7 +31,7 @@ namespace Abot2.Tests.Unit.Util
         }
 
         [TestMethod]
-        public void DoWork_TokenCanceled_WorkNeverStarts()
+        public async Task DoWork_TokenCanceled_WorkNeverStarts()
         {
             var cancellationTokenSource = new CancellationTokenSource();
             var uut = new TaskThreadManager(10, cancellationTokenSource);
@@ -40,7 +41,7 @@ namespace Abot2.Tests.Unit.Util
             for (var i = 0; i < 5; i++)
                 uut.DoWork(() => Interlocked.Increment(ref count));
 
-            System.Threading.Thread.Sleep(200);
+            await Task.Delay(200, TestContext.CancellationToken);
             Assert.AreEqual(0, count);
         }
 

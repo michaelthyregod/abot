@@ -32,6 +32,8 @@ namespace Abot2.Tests.Unit.Crawler
         CrawlConfiguration _dummyConfiguration;
         Uri _rootUri;
 
+        public TestContext TestContext { get; set; }
+
         [TestInitialize]
         public void SetUp()
         {
@@ -567,7 +569,7 @@ namespace Abot2.Tests.Unit.Crawler
             await _unitUnderTest.CrawlAsync(_rootUri);
 
             //Assert
-            Thread.Sleep(150);//sleep since the events are async and may not complete before returning
+            await Task.Delay(150, TestContext.CancellationToken);//sleep since the events are async and may not complete before returning
 
             _fakeHttpRequester.Verify(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>()), Times.Once());
             _fakeHtmlParser.Verify(f => f.GetLinks(It.IsAny<CrawledPage>()), Times.Once());
@@ -762,7 +764,7 @@ namespace Abot2.Tests.Unit.Crawler
             //Act
             var result = await _unitUnderTest.CrawlAsync(_rootUri, cancellationTokenSource);
 
-            Thread.Sleep(30);
+            await Task.Delay(30, TestContext.CancellationToken);
 
             //Assert
             _fakeCrawlDecisionMaker.Verify(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>()), Times.Exactly(1));

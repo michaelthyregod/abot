@@ -1,4 +1,5 @@
-﻿using Abot2.Util;
+﻿using System.Threading.Tasks;
+using Abot2.Util;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Threading;
 
@@ -15,7 +16,7 @@ namespace Abot2.Tests.Unit.Util
         }
 
         [TestMethod]
-        public void AbortAll_WorkCompletedAnyway()
+        public async Task AbortAll_WorkCompletedAnyway()
         {
             var uut = GetInstance(10) as ManualThreadManager;
 
@@ -28,7 +29,7 @@ namespace Abot2.Tests.Unit.Util
 
             uut.AbortAll();//this does nothing to stop/cancel threads on this thread manager
 
-            System.Threading.Thread.Sleep(250);
+            await Task.Delay(250, TestContext.CancellationToken);
             Assert.AreEqual(5, count);
         }
     }

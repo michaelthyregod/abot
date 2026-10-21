@@ -1,4 +1,5 @@
-﻿using Abot2.Util;
+﻿using System.Threading.Tasks;
+using Abot2.Util;
 using Moq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
@@ -12,6 +13,8 @@ namespace Abot2.Tests.Unit.Util
     {
         CachedMemoryMonitor _uut;
         Mock<IMemoryMonitor> _fakeMemoryMonitor;
+
+        public TestContext TestContext { get; set; }
 
         [TestInitialize]
         public void Setup()
@@ -49,13 +52,13 @@ namespace Abot2.Tests.Unit.Util
         }
 
         [TestMethod]
-        public void Constructor_CacheExpirationIsValid_CallsMemoryMonitorEveryCacheExpirationInterval()
+        public async Task Constructor_CacheExpirationIsValid_CallsMemoryMonitorEveryCacheExpirationInterval()
         {
             _uut = new CachedMemoryMonitor(_fakeMemoryMonitor.Object, 1);
 
             _fakeMemoryMonitor.Verify(f => f.GetCurrentUsageInMb(), Times.Exactly(1));
 
-            System.Threading.Thread.Sleep(1200);
+            await Task.Delay(1200, TestContext.CancellationToken);
 
             _fakeMemoryMonitor.Verify(f => f.GetCurrentUsageInMb(), Times.Exactly(2));
         }
