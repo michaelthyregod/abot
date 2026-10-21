@@ -35,7 +35,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(2, result.Count());
+            Assert.HasCount(2, result);
             Assert.AreEqual("http://aaa.com/", result.ElementAt(0).HrefValue.AbsoluteUri);
             Assert.AreEqual("text1", result.ElementAt(0).RawHrefText);
             Assert.AreEqual("http://a.com/aaa/a.html", result.ElementAt(1).HrefValue.AbsoluteUri);
@@ -49,7 +49,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(2, result.Count());
+            Assert.HasCount(2, result);
             Assert.AreEqual("http://aaa.com/", result.ElementAt(0).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://a.com/aaa/a.html", result.ElementAt(1).HrefValue.AbsoluteUri);
         }
@@ -61,7 +61,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(2, result.Count());
+            Assert.HasCount(2, result);
             Assert.AreEqual("http://bbb.com/", result.ElementAt(0).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://a.com/bbb/b.html", result.ElementAt(1).HrefValue.AbsoluteUri);
         }
@@ -73,7 +73,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(2, result.Count());
+            Assert.HasCount(2, result);
             Assert.AreEqual("http://aaa.com/", result.ElementAt(0).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://a.com/aaa/a.html", result.ElementAt(1).HrefValue.AbsoluteUri);
         }
@@ -85,7 +85,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(2, result.Count());
+            Assert.HasCount(2, result);
             Assert.AreEqual("http://bbb.com/", result.ElementAt(0).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://a.com/bbb/b.html", result.ElementAt(1).HrefValue.AbsoluteUri);
         }
@@ -97,7 +97,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(0, result.Count());
+            Assert.IsEmpty(result);
         }
 
         [TestMethod]
@@ -107,7 +107,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(5, result.Count());
+            Assert.HasCount(5, result);
             Assert.AreEqual("mailto:aaa@gmail.com", result.ElementAt(0).HrefValue.AbsoluteUri);
             Assert.AreEqual("tel:+123456789", result.ElementAt(1).HrefValue.AbsoluteUri);
             Assert.AreEqual("callto:+123456789", result.ElementAt(2).HrefValue.AbsoluteUri);
@@ -122,7 +122,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(0, result.Count());
+            Assert.IsEmpty(result);
         }
 
         [TestMethod]
@@ -145,7 +145,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(0, result.Count());
+            Assert.IsEmpty(result);
         }
 
         [TestMethod]
@@ -168,7 +168,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(0, result.Count());
+            Assert.IsEmpty(result);
         }
 
         [TestMethod]
@@ -191,7 +191,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(0, result.Count());
+            Assert.IsEmpty(result);
         }
 
         [TestMethod]
@@ -201,7 +201,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(1, result.Count());
+            Assert.HasCount(1, result);
             Assert.AreEqual("http://a.com/aaa/a.html", result.ElementAt(0).HrefValue.AbsoluteUri);
         }
 
@@ -212,7 +212,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(2, result.Count());
+            Assert.HasCount(2, result);
             Assert.AreEqual("http://a.com/aaa/a.html", result.ElementAt(0).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://a.com/aaa/a.html/", result.ElementAt(1).HrefValue.AbsoluteUri);
         }
@@ -225,7 +225,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(4, result.Count());
+            Assert.HasCount(4, result);
             Assert.AreEqual("http://a.com/aaa/a.html", result.ElementAt(0).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://a.com/aaa/a.html#top", result.ElementAt(1).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://a.com/aaa/a.html#bottom", result.ElementAt(2).HrefValue.AbsoluteUri);
@@ -240,7 +240,7 @@ namespace Abot2.Tests.Unit.Core
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(0, result.Count());
+            Assert.IsEmpty(result);
         }
 
         [TestMethod]
@@ -251,7 +251,7 @@ namespace Abot2.Tests.Unit.Core
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(0, result.Count());
+            Assert.IsEmpty(result);
         }
 
         [TestMethod]
@@ -261,7 +261,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(2, result.Count());
+            Assert.HasCount(2, result);
             Assert.AreEqual("http://aaa.com/", result.ElementAt(0).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://bbb.com/aaa/a.html", result.ElementAt(1).HrefValue.AbsoluteUri);
         }
@@ -273,7 +273,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(2, result.Count());
+            Assert.HasCount(2, result);
             Assert.AreEqual("http://aaa.com/", result.ElementAt(0).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://a.com/aaa/a.html", result.ElementAt(1).HrefValue.AbsoluteUri);
         }
@@ -285,7 +285,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(2, result.Count());
+            Assert.HasCount(2, result);
             Assert.AreEqual("http://aaa.com/", result.ElementAt(0).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://a.com/aaa/a.html", result.ElementAt(1).HrefValue.AbsoluteUri);
         }
@@ -298,7 +298,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(2, result.Count());
+            Assert.HasCount(2, result);
             Assert.AreEqual("http://aaa.com/", result.ElementAt(0).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://aaa.com/aaa/a.html", result.ElementAt(1).HrefValue.AbsoluteUri);
         }
@@ -311,7 +311,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(2, result.Count());
+            Assert.HasCount(2, result);
             Assert.AreEqual("http://aaa.com/", result.ElementAt(0).HrefValue.AbsoluteUri);
             Assert.AreEqual("https://aaa.com/aaa/a.html", result.ElementAt(1).HrefValue.AbsoluteUri);
         }
@@ -323,7 +323,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(2, result.Count());
+            Assert.HasCount(2, result);
             Assert.AreEqual("http://aaa.com/", result.ElementAt(0).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://bbb.com/aaa/a.html", result.ElementAt(1).HrefValue.AbsoluteUri);
         }
@@ -335,7 +335,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(3, result.Count());
+            Assert.HasCount(3, result);
             Assert.AreEqual("http://aaa.com/", result.ElementAt(0).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://bbb.com/aaa/a.html", result.ElementAt(1).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://bbb.com/images/aaa/a.html", result.ElementAt(2).HrefValue.AbsoluteUri);
@@ -348,7 +348,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(2, result.Count());
+            Assert.HasCount(2, result);
             Assert.AreEqual("http://aaa.com/", result.ElementAt(0).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://bbb.com/aaa/a.html", result.ElementAt(1).HrefValue.AbsoluteUri);
         }
@@ -360,7 +360,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(3, result.Count());
+            Assert.HasCount(3, result);
             Assert.AreEqual("http://aaa.com/", result.ElementAt(0).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://a.com/aaa/a.html", result.ElementAt(1).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://a.com/images/aaa/a.html", result.ElementAt(2).HrefValue.AbsoluteUri);
@@ -373,7 +373,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(3, result.Count());
+            Assert.HasCount(3, result);
             Assert.AreEqual("http://aaa.com/", result.ElementAt(0).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://a.com/aaa/a.html", result.ElementAt(1).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://a.com/images/aaa/a.html", result.ElementAt(2).HrefValue.AbsoluteUri);
@@ -386,7 +386,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(2, result.Count());
+            Assert.HasCount(2, result);
             Assert.AreEqual("http://aaa.com/", result.ElementAt(0).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://a.com/aaa/a.html", result.ElementAt(1).HrefValue.AbsoluteUri);
         }
@@ -407,7 +407,7 @@ namespace Abot2.Tests.Unit.Core
 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(2, result.Count());
+            Assert.HasCount(2, result);
             Assert.AreEqual("http://zzz.com/aaa/a.html", result.ElementAt(0).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://zzz.com/bbb/b.html", result.ElementAt(1).HrefValue.AbsoluteUri);
         }
@@ -420,7 +420,7 @@ namespace Abot2.Tests.Unit.Core
             //This sets the Address properties backing field 
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(1, result.Count());
+            Assert.HasCount(1, result);
             Assert.AreEqual("http://a.com/search?rls=en&q=stack+overflow", result.ElementAt(0).HrefValue.AbsoluteUri);
         }
 
@@ -434,7 +434,7 @@ namespace Abot2.Tests.Unit.Core
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(2, result.Count());
+            Assert.HasCount(2, result);
         }
 
         [TestMethod]
@@ -446,7 +446,7 @@ namespace Abot2.Tests.Unit.Core
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(0, result.Count());
+            Assert.IsEmpty(result);
         }
 
         [TestMethod]
@@ -458,7 +458,7 @@ namespace Abot2.Tests.Unit.Core
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(0, result.Count());
+            Assert.IsEmpty(result);
         }
 
         [TestMethod]
@@ -470,7 +470,7 @@ namespace Abot2.Tests.Unit.Core
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(0, result.Count());
+            Assert.IsEmpty(result);
         }
 
         [TestMethod]
@@ -482,7 +482,7 @@ namespace Abot2.Tests.Unit.Core
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(0, result.Count());
+            Assert.IsEmpty(result);
         }
 
         [TestMethod]
@@ -494,7 +494,7 @@ namespace Abot2.Tests.Unit.Core
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(0, result.Count());
+            Assert.IsEmpty(result);
         }
 
         [TestMethod]
@@ -506,7 +506,7 @@ namespace Abot2.Tests.Unit.Core
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(2, result.Count());
+            Assert.HasCount(2, result);
         }
 
 
@@ -520,7 +520,7 @@ namespace Abot2.Tests.Unit.Core
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(0, result.Count());
+            Assert.IsEmpty(result);
         }
 
         [TestMethod]
@@ -533,7 +533,7 @@ namespace Abot2.Tests.Unit.Core
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(0, result.Count());
+            Assert.IsEmpty(result);
         }
 
         [TestMethod]
@@ -546,7 +546,7 @@ namespace Abot2.Tests.Unit.Core
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(0, result.Count());
+            Assert.IsEmpty(result);
         }
 
         [TestMethod]
@@ -559,7 +559,7 @@ namespace Abot2.Tests.Unit.Core
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(0, result.Count());
+            Assert.IsEmpty(result);
         }
 
         [TestMethod]
@@ -572,7 +572,7 @@ namespace Abot2.Tests.Unit.Core
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(0, result.Count());
+            Assert.IsEmpty(result);
         }
 
         [TestMethod]
@@ -585,7 +585,7 @@ namespace Abot2.Tests.Unit.Core
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(2, result.Count());
+            Assert.HasCount(2, result);
         }
 
 
@@ -598,7 +598,7 @@ namespace Abot2.Tests.Unit.Core
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(0, result.Count());
+            Assert.IsEmpty(result);
         }
 
         [TestMethod]
@@ -610,7 +610,7 @@ namespace Abot2.Tests.Unit.Core
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(0, result.Count());
+            Assert.IsEmpty(result);
         }
 
         [TestMethod]
@@ -622,7 +622,7 @@ namespace Abot2.Tests.Unit.Core
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
             Assert.IsNotNull(result);
-            Assert.AreEqual(2, result.Count());
+            Assert.HasCount(2, result);
             Assert.AreEqual("http://x.com/xxx/x.html", result.ElementAt(0).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://x.com/yyy/y.html", result.ElementAt(1).HrefValue.AbsoluteUri);
         }
@@ -633,7 +633,7 @@ namespace Abot2.Tests.Unit.Core
             _crawledPage.Content.Text = "<a href=\"http://www.gamespot.com/pc/rpg/numen/index.html?om_act=convert&om_clk=tabs&tag=tabs;summary\" ></a>";
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(1, result.Count());
+            Assert.HasCount(1, result);
             Assert.AreEqual("http://www.gamespot.com/pc/rpg/numen/index.html?om_act=convert&om_clk=tabs&tag=tabs;summary", result.ElementAt(0).HrefValue.AbsoluteUri);
         }
 
@@ -643,7 +643,7 @@ namespace Abot2.Tests.Unit.Core
             _crawledPage.Content.Text = "<html><head><link rel=\"canonical\" href=\"http://a.com/page1\" /></head><body><a href=\"http://a.com/page2\"></a></body></html>";
             var result = _unitUnderTest.GetLinks(_crawledPage);
 
-            Assert.AreEqual(2, result.Count());
+            Assert.HasCount(2, result);
             Assert.AreEqual("http://a.com/page2", result.ElementAt(0).HrefValue.AbsoluteUri);
             Assert.AreEqual("http://a.com/page1", result.ElementAt(1).HrefValue.AbsoluteUri);
         }

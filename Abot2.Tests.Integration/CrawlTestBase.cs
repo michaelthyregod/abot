@@ -35,8 +35,8 @@ namespace Abot2.Tests.Integration
             List<Discrepancy> descrepancies = GetDescrepancies();
             PrintDescrepancies(descrepancies);
 
-            Assert.AreEqual(0, descrepancies.Count, "There were discrepancies between expected and actual crawl results. See ouput window for details.");
-            Assert.IsTrue(result.Elapsed.TotalSeconds < _maxSecondsToCrawl, string.Format("Elapsed Time to crawl {0}, over {1} second threshold", result.Elapsed.TotalSeconds, _maxSecondsToCrawl));
+            Assert.IsEmpty(descrepancies, "There were discrepancies between expected and actual crawl results. See ouput window for details.");
+            Assert.IsLessThan(_maxSecondsToCrawl, result.Elapsed.TotalSeconds, string.Format("Elapsed Time to crawl {0}, over {1} second threshold", result.Elapsed.TotalSeconds, _maxSecondsToCrawl));
         }
 
         private protected abstract List<PageResult> GetExpectedCrawlResult();

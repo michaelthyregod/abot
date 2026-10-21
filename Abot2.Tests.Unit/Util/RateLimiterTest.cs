@@ -46,7 +46,7 @@ namespace Abot2.Tests.Unit.Util
 
             timer.Stop();
 
-            Assert.IsTrue(timer.Elapsed.TotalSeconds < 1);
+            Assert.IsLessThan(1, timer.Elapsed.TotalSeconds);
         }
 
         [TestMethod]
@@ -62,7 +62,7 @@ namespace Abot2.Tests.Unit.Util
 
             timer.Stop();
 
-            Assert.IsTrue(timer.Elapsed.TotalSeconds > 1);
+            Assert.IsGreaterThan(1, timer.Elapsed.TotalSeconds);
         }
 
         [TestMethod]
@@ -77,7 +77,7 @@ namespace Abot2.Tests.Unit.Util
 
             timer.Stop();
 
-            Assert.IsTrue(timer.Elapsed.TotalSeconds < 1);
+            Assert.IsLessThan(1, timer.Elapsed.TotalSeconds);
         }
 
         [TestMethod]

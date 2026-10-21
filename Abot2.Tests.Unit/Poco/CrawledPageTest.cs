@@ -20,15 +20,15 @@ namespace Abot2.Tests.Unit.Poco
         public void Constructor_ValidUri_CreatesInstance()
         {
             var unitUnderTest = new CrawledPage(new Uri("http://a.com/"));
-            Assert.AreEqual(null, unitUnderTest.HttpRequestMessage);
-            Assert.AreEqual(null, unitUnderTest.HttpResponseMessage);
-            Assert.AreEqual(false, unitUnderTest.IsRetry);
-            Assert.AreEqual(null, unitUnderTest.ParentUri);
+            Assert.IsNull(unitUnderTest.HttpRequestMessage);
+            Assert.IsNull(unitUnderTest.HttpResponseMessage);
+            Assert.IsFalse(unitUnderTest.IsRetry);
+            Assert.IsNull(unitUnderTest.ParentUri);
             Assert.IsNotNull(unitUnderTest.Content);
             Assert.IsNotNull(unitUnderTest.AngleSharpHtmlDocument);
             Assert.AreEqual("http://a.com/", unitUnderTest.Uri.AbsoluteUri);
-            Assert.AreEqual(null, unitUnderTest.HttpRequestException);
-            Assert.AreEqual(null, unitUnderTest.ParsedLinks);
+            Assert.IsNull(unitUnderTest.HttpRequestException);
+            Assert.IsNull(unitUnderTest.ParsedLinks);
         }
 
         [TestMethod]
@@ -80,7 +80,7 @@ namespace Abot2.Tests.Unit.Poco
             };
 
             Assert.IsNotNull(unitUnderTest.AngleSharpHtmlDocument);
-            Assert.IsTrue(unitUnderTest.AngleSharpHtmlDocument.Body.TextContent.Length > 0);
+            Assert.IsGreaterThan(0, unitUnderTest.AngleSharpHtmlDocument.Body.TextContent.Length);
         }
 
         [TestMethod]
@@ -96,8 +96,8 @@ namespace Abot2.Tests.Unit.Poco
             };
 
             Assert.IsNotNull(unitUnderTest.AngleSharpHtmlDocument);
-            Assert.IsTrue(unitUnderTest.AngleSharpHtmlDocument.Body.TextContent.Length > 0);
-            Assert.IsTrue(GetMaxDepth(unitUnderTest.AngleSharpHtmlDocument) <= CrawledPage.MaxHtmlDocumentDepth);
+            Assert.IsGreaterThan(0, unitUnderTest.AngleSharpHtmlDocument.Body.TextContent.Length);
+            Assert.IsLessThanOrEqualTo(CrawledPage.MaxHtmlDocumentDepth, GetMaxDepth(unitUnderTest.AngleSharpHtmlDocument));
         }
 
         [TestMethod]
@@ -131,8 +131,8 @@ namespace Abot2.Tests.Unit.Poco
             Assert.AreEqual(expectedText.ToString(), unitUnderTest.AngleSharpHtmlDocument.Body.TextContent);
             Assert.AreEqual(levels, unitUnderTest.AngleSharpHtmlDocument.QuerySelectorAll("div").Length);
             Assert.AreEqual("http://a.com/deep", unitUnderTest.AngleSharpHtmlDocument.QuerySelector("a").GetAttribute("href"));
-            Assert.IsTrue(GetMaxDepth(unitUnderTest.AngleSharpHtmlDocument) <= CrawledPage.MaxHtmlDocumentDepth);
-            Assert.IsTrue(unitUnderTest.AngleSharpHtmlDocument.DocumentElement.OuterHtml.Contains("<a href=\"http://a.com/deep\">link</a>"));
+            Assert.IsLessThanOrEqualTo(CrawledPage.MaxHtmlDocumentDepth, GetMaxDepth(unitUnderTest.AngleSharpHtmlDocument));
+            Assert.Contains("<a href=\"http://a.com/deep\">link</a>", unitUnderTest.AngleSharpHtmlDocument.DocumentElement.OuterHtml);
         }
 
         [TestMethod]
@@ -185,7 +185,7 @@ namespace Abot2.Tests.Unit.Poco
             };
 
             Assert.IsNotNull(unitUnderTest.AngleSharpHtmlDocument);
-            Assert.IsTrue(unitUnderTest.AngleSharpHtmlDocument.DocumentElement.OuterHtml.Length > 1);
+            Assert.IsGreaterThan(1, unitUnderTest.AngleSharpHtmlDocument.DocumentElement.OuterHtml.Length);
         }
 
         [TestMethod]
@@ -200,7 +200,7 @@ namespace Abot2.Tests.Unit.Poco
             };
 
             Assert.IsNotNull(unitUnderTest.AngleSharpHtmlDocument);
-            Assert.IsTrue(unitUnderTest.AngleSharpHtmlDocument.DocumentElement.OuterHtml.Length > 1);
+            Assert.IsGreaterThan(1, unitUnderTest.AngleSharpHtmlDocument.DocumentElement.OuterHtml.Length);
         }
 
         [TestMethod]
@@ -245,7 +245,7 @@ namespace Abot2.Tests.Unit.Poco
                 RequestCompleted = DateTime.Now
             };
 
-            Assert.IsTrue(uut.Elapsed >= 5000, "Expected >= 5000 but was " + uut.Elapsed);
+            Assert.IsGreaterThanOrEqualTo(5000, uut.Elapsed, "Expected >= 5000 but was " + uut.Elapsed);
         }
 
         private string GetFileContent(string fileName)

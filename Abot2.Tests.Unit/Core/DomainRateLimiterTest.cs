@@ -30,7 +30,7 @@ namespace Abot2.Tests.Unit.Core
 
             timer.Stop();
 
-            Assert.IsTrue(timer.ElapsedMilliseconds > 175);
+            Assert.IsGreaterThan(175, timer.ElapsedMilliseconds);
         }
 
         [TestMethod]
@@ -44,7 +44,7 @@ namespace Abot2.Tests.Unit.Core
             unitUnderTest.RateLimit(uri);
             timer.Stop();
 
-            Assert.IsTrue(timer.ElapsedMilliseconds < 50);
+            Assert.IsLessThan(50, timer.ElapsedMilliseconds);
         }
 
         [TestMethod]
@@ -63,7 +63,7 @@ namespace Abot2.Tests.Unit.Core
             unitUnderTest.RateLimit(uri4);
             timer.Stop();
 
-            Assert.IsTrue(timer.ElapsedMilliseconds < 100);
+            Assert.IsLessThan(100, timer.ElapsedMilliseconds);
         }
 
         [TestMethod]
@@ -82,7 +82,7 @@ namespace Abot2.Tests.Unit.Core
             unitUnderTest.RateLimit(uri4);
             timer.Stop();
 
-            Assert.IsTrue(timer.ElapsedMilliseconds < 50);
+            Assert.IsLessThan(50, timer.ElapsedMilliseconds);
         }
 
         [TestMethod]
@@ -115,7 +115,7 @@ namespace Abot2.Tests.Unit.Core
             unitUnderTest.RateLimit(pageUri2);
             timer.Stop();
 
-            Assert.IsTrue(timer.ElapsedMilliseconds > 190);
+            Assert.IsGreaterThan(190, timer.ElapsedMilliseconds);
         }
 
         [TestMethod]
@@ -135,7 +135,7 @@ namespace Abot2.Tests.Unit.Core
             unitUnderTest.RateLimit(pageUri2);
             timer.Stop();
 
-            Assert.IsTrue(timer.ElapsedMilliseconds > 190);
+            Assert.IsGreaterThan(190, timer.ElapsedMilliseconds);
         }
 
         [TestMethod]
@@ -182,7 +182,7 @@ namespace Abot2.Tests.Unit.Core
             unitUnderTest.RateLimit(pageUri2);
             timer.Stop();
 
-            Assert.IsTrue(timer.ElapsedMilliseconds > 190);
+            Assert.IsGreaterThan(190, timer.ElapsedMilliseconds);
         }
 
         [TestMethod]
@@ -202,7 +202,7 @@ namespace Abot2.Tests.Unit.Core
             unitUnderTest.RateLimit(pageUri2);
             timer.Stop();
 
-            Assert.IsTrue(timer.ElapsedMilliseconds > 190);
+            Assert.IsGreaterThan(190, timer.ElapsedMilliseconds);
         }
 
         [TestMethod]
@@ -219,7 +219,7 @@ namespace Abot2.Tests.Unit.Core
             domainRateLimiter.RateLimit(domain);
             timer.Stop();
 
-            Assert.IsTrue(timer.ElapsedMilliseconds >= 100, "Expected it to take more than 100 millisecs but only took " + timer.ElapsedMilliseconds);
+            Assert.IsGreaterThanOrEqualTo(100, timer.ElapsedMilliseconds, "Expected it to take more than 100 millisecs but only took " + timer.ElapsedMilliseconds);
         }
 
 
@@ -241,7 +241,7 @@ namespace Abot2.Tests.Unit.Core
             domainRateLimiter.RateLimit(domain);
             timer.Stop();
 
-            Assert.IsTrue(timer.ElapsedMilliseconds < 100, "Expected it to take less than 100 millisecs but only took " + timer.ElapsedMilliseconds);
+            Assert.IsLessThan(100, timer.ElapsedMilliseconds, "Expected it to take less than 100 millisecs but only took " + timer.ElapsedMilliseconds);
         }
 
         [TestMethod]

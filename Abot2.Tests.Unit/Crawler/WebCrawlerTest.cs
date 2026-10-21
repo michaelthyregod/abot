@@ -448,7 +448,7 @@ namespace Abot2.Tests.Unit.Crawler
             await _unitUnderTest.CrawlAsync(_rootUri);
             timer.Stop();
 
-            Assert.IsTrue(timer.ElapsedMilliseconds > 800);
+            Assert.IsGreaterThan(800, timer.ElapsedMilliseconds);
         }
 
         [TestMethod]
@@ -475,7 +475,7 @@ namespace Abot2.Tests.Unit.Crawler
             await _unitUnderTest.CrawlAsync(_rootUri);
             timer.Stop();
 
-            Assert.IsTrue(timer.ElapsedMilliseconds > 4 * elapsedTimeForLongJob);
+            Assert.IsGreaterThan(4 * elapsedTimeForLongJob, timer.ElapsedMilliseconds);
         }
 
         [TestMethod]
@@ -493,7 +493,7 @@ namespace Abot2.Tests.Unit.Crawler
             await _unitUnderTest.CrawlAsync(_rootUri);
             timer.Stop();
 
-            Assert.IsTrue(timer.ElapsedMilliseconds > 800);
+            Assert.IsGreaterThan(800, timer.ElapsedMilliseconds);
         }
 
         [TestMethod]
@@ -512,7 +512,7 @@ namespace Abot2.Tests.Unit.Crawler
             await _unitUnderTest.CrawlAsync(_rootUri);
             timer.Stop();
 
-            Assert.IsTrue(timer.ElapsedMilliseconds > 800);
+            Assert.IsGreaterThan(800, timer.ElapsedMilliseconds);
         }
 
         #endregion
@@ -961,7 +961,7 @@ namespace Abot2.Tests.Unit.Crawler
             await _unitUnderTest.CrawlAsync(_rootUri);
             watch.Stop();
 
-            Assert.IsTrue(watch.ElapsedMilliseconds > 2000);
+            Assert.IsGreaterThan(2000, watch.ElapsedMilliseconds);
             Assert.AreEqual(1.0, page.RetryAfter);
             _fakeCrawlDecisionMaker.Verify(f => f.ShouldRecrawlPage(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>()), Times.Exactly(2));
         }
@@ -999,7 +999,7 @@ namespace Abot2.Tests.Unit.Crawler
             await _unitUnderTest.CrawlAsync(_rootUri);
             watch.Start();
 
-            Assert.IsTrue(watch.ElapsedMilliseconds > 2000);
+            Assert.IsGreaterThan(2000, watch.ElapsedMilliseconds);
             Assert.IsTrue(page.RetryAfter > 0);
             _fakeCrawlDecisionMaker.Verify(f => f.ShouldRecrawlPage(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>()), Times.Exactly(2));
         }

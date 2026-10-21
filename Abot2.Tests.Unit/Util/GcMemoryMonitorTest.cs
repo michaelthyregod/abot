@@ -28,7 +28,7 @@ namespace Abot2.Tests.Unit.Util
         [TestMethod]
         public void GetCurrentUsageInMb_ReturnsAValueAboveZero()
         {
-            Assert.IsTrue(_uut.GetCurrentUsageInMb() > 0);
+            Assert.IsGreaterThan(0, _uut.GetCurrentUsageInMb());
         }
 
         [TestMethod]
@@ -40,7 +40,7 @@ namespace Abot2.Tests.Unit.Util
             for (var i = 0; i < 10000000; i++)
                 guids.Add(Guid.NewGuid());
 
-            Assert.IsTrue(_uut.GetCurrentUsageInMb() > originalValue);
+            Assert.IsGreaterThan(originalValue, _uut.GetCurrentUsageInMb());
         }
     }
 }

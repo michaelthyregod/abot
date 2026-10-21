@@ -12,10 +12,10 @@ namespace Abot2.Tests.Unit.Poco
         public void Constructor_CreatesInstance()
         {
             var unitUnderTest = new PageToCrawl();
-            Assert.AreEqual(false, unitUnderTest.IsRetry);
-            Assert.AreEqual(false, unitUnderTest.IsRoot);
-            Assert.AreEqual(false, unitUnderTest.IsInternal);
-            Assert.AreEqual(null, unitUnderTest.ParentUri);
+            Assert.IsFalse(unitUnderTest.IsRetry);
+            Assert.IsFalse(unitUnderTest.IsRoot);
+            Assert.IsFalse(unitUnderTest.IsInternal);
+            Assert.IsNull(unitUnderTest.ParentUri);
             Assert.IsNull(unitUnderTest.Uri);
             Assert.AreEqual(0, unitUnderTest.CrawlDepth);
             Assert.IsNull(unitUnderTest.PageBag);
@@ -26,10 +26,10 @@ namespace Abot2.Tests.Unit.Poco
         public void Constructor_ValidUri_CreatesInstance()
         {
             var unitUnderTest = new PageToCrawl(new Uri("http://a.com/"));
-            Assert.AreEqual(false, unitUnderTest.IsRetry);
-            Assert.AreEqual(false, unitUnderTest.IsRoot);
-            Assert.AreEqual(false, unitUnderTest.IsInternal);
-            Assert.AreEqual(null, unitUnderTest.ParentUri);
+            Assert.IsFalse(unitUnderTest.IsRetry);
+            Assert.IsFalse(unitUnderTest.IsRoot);
+            Assert.IsFalse(unitUnderTest.IsInternal);
+            Assert.IsNull(unitUnderTest.ParentUri);
             Assert.AreEqual("http://a.com/", unitUnderTest.Uri.AbsoluteUri);
             Assert.AreEqual(0, unitUnderTest.CrawlDepth);
             Assert.IsNotNull(unitUnderTest.PageBag);

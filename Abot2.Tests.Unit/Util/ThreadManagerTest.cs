@@ -80,7 +80,7 @@ namespace Abot2.Tests.Unit.Util
                 });
             }
 
-            Assert.IsTrue(count < MAXTHREADS);
+            Assert.IsLessThan(MAXTHREADS, count);
             await Task.Delay(80, TestContext.CancellationToken);//was 20 but had to bump it up or the TaskThreadManager would fail, its way slower
             Assert.AreEqual(MAXTHREADS, count);
         }

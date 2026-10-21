@@ -94,8 +94,8 @@ namespace Abot2.Tests.Integration
             var result = await crawler.CrawlAsync(SetupAssemblyInitializer.SlowSite.BaseUri);
 
             Assert.IsFalse(result.ErrorOccurred);
-            Assert.IsTrue(result.Elapsed.TotalSeconds < 8, "Took more than 8 seconds");
-            Assert.IsTrue(pagesCrawledCount < 2, "Crawled more than 2 pages");
+            Assert.IsLessThan(8, result.Elapsed.TotalSeconds, "Took more than 8 seconds");
+            Assert.IsLessThan(2, pagesCrawledCount, "Crawled more than 2 pages");
         }
 
         [TestMethod]
@@ -156,7 +156,7 @@ namespace Abot2.Tests.Integration
             await crawler.CrawlAsync(uriToCrawl);
             var elapsed = DateTime.Now - start;
 
-            Assert.IsTrue(elapsed.TotalMilliseconds > 2000);
+            Assert.IsGreaterThan(2000, elapsed.TotalMilliseconds);
             Assert.AreEqual(3, pagesCrawledCount);
         }
 
