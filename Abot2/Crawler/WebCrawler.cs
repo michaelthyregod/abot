@@ -885,39 +885,41 @@ namespace Abot2.Crawler
             var linksToCrawl = 0;
             foreach (var hyperLink in crawledPage.ParsedLinks)
             {
-                // First validate that the link was not already visited or added to the list of pages to visit, so we don't
-                // make the same validation and fire the same events twice.
-                if (!_scheduler.IsUriKnown(hyperLink.HrefValue) &&
-                    (ShouldScheduleLinkDecisionMaker == null || ShouldScheduleLinkDecisionMaker.Invoke(hyperLink.HrefValue, crawledPage, _crawlContext)))
+                // Checking that the link is new, validating it and marking it as known happen under one lock, so a link found
+                // on several pages crawled at the same time is validated once and its events fire once.
+                lock (_scheduleLock)
                 {
-                    try //Added due to a bug in the Uri class related to this (http://stackoverflow.com/questions/2814951/system-uriformatexception-invalid-uri-the-hostname-could-not-be-parsed)
-                    {
-                        var page = new PageToCrawl(hyperLink.HrefValue);
-                        page.ParentUri = crawledPage.Uri;
-                        page.CrawlDepth = crawledPage.CrawlDepth + 1;
-                        page.IsInternal = IsInternalUri(hyperLink.HrefValue);
-                        page.IsRoot = false;
+                    if (_scheduler.IsUriKnown(hyperLink.HrefValue))
+                        continue;
 
-                        lock (_scheduleLock)
+                    if (ShouldScheduleLinkDecisionMaker == null || ShouldScheduleLinkDecisionMaker.Invoke(hyperLink.HrefValue, crawledPage, _crawlContext))
+                    {
+                        try //Added due to a bug in the Uri class related to this (http://stackoverflow.com/questions/2814951/system-uriformatexception-invalid-uri-the-hostname-could-not-be-parsed)
                         {
+                            var page = new PageToCrawl(hyperLink.HrefValue);
+                            page.ParentUri = crawledPage.Uri;
+                            page.CrawlDepth = crawledPage.CrawlDepth + 1;
+                            page.IsInternal = IsInternalUri(hyperLink.HrefValue);
+                            page.IsRoot = false;
+
                             if (ShouldSchedulePageLink(page))
                             {
                                 _scheduler.Add(page);
                                 linksToCrawl++;
                             }
                         }
-
-                        if (!ShouldScheduleMorePageLink(linksToCrawl))
-                        {
-                            Log.Information("MaxLinksPerPage has been reached. No more links will be scheduled for current page [{0}].", crawledPage.Uri);
-                            break;
-                        }
+                        catch { }
                     }
-                    catch { }
+
+                    // Add this link to the list of known Urls so validations are not duplicated in the future.
+                    _scheduler.AddKnownUri(hyperLink.HrefValue);
                 }
 
-                // Add this link to the list of known Urls so validations are not duplicated in the future.
-                _scheduler.AddKnownUri(hyperLink.HrefValue);
+                if (!ShouldScheduleMorePageLink(linksToCrawl))
+                {
+                    Log.Information("MaxLinksPerPage has been reached. No more links will be scheduled for current page [{0}].", crawledPage.Uri);
+                    break;
+                }
             }
         }
 

@@ -324,6 +324,7 @@ AngleSharp 1.x processes the document tree recursively, so a malformed or hostil
 These need no action, but may change what you observe:
 
 - `PageRequester` creates exactly one `HttpClient`, even when the first requests run at the same time. 2.x could create several and leak all but one.
+- A link found on several pages that are crawled at the same time is evaluated once. In 2.x, `ShouldCrawlPage` (and your `ShouldScheduleLinkDecisionMaker`) could be called for it more than once, and `PageCrawlDisallowed` could fire more than once for the same link.
 - `PoliteWebCrawler` disposes the rate limiter and the robots.txt `PageRequester` it creates.
 - `WebCrawler` disposes the crawl timeout timer, and `TaskThreadManager` disposes the cancellation token source it creates.
 - A `RateLimiter` timer callback that runs after `Dispose` no longer crashes the process.

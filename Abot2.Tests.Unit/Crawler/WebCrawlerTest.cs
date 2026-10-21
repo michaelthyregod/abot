@@ -895,6 +895,37 @@ namespace Abot2.Tests.Unit.Crawler
         }
 
         [TestMethod]
+        public async Task Crawl_LinkFoundOnPagesCrawledAtTheSameTime_IsCheckedOnce()
+        {
+            var page1Uri = new Uri("http://a.com/page1");
+            var page2Uri = new Uri("http://a.com/page2");
+            var sharedLink = new Uri("http://a.com/shared");
+
+            using (var bothPagesParsed = new Barrier(2))
+            {
+                _fakeHtmlParser.Setup(f => f.GetLinks(It.Is<CrawledPage>(p => p.Uri == _rootUri)))
+                    .Returns(new List<HyperLink> { new HyperLink { HrefValue = page1Uri }, new HyperLink { HrefValue = page2Uri } });
+                //Holds each page until the other has been parsed too, so both schedule their links at the same time
+                _fakeHtmlParser.Setup(f => f.GetLinks(It.Is<CrawledPage>(p => p.Uri != _rootUri)))
+                    .Callback(() => bothPagesParsed.SignalAndWait(TimeSpan.FromSeconds(5), TestContext.CancellationToken))
+                    .Returns(new List<HyperLink> { new HyperLink { HrefValue = sharedLink } });
+                _fakeHttpRequester.Setup(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>()))
+                    .Returns<Uri, Func<CrawledPage, CrawlDecision>>((uri, shouldDownloadContent) => Task.FromResult(new CrawledPage(uri)));
+                _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
+                //Slow, so the other page reaches the shared link while this decision is still being made
+                _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.Is<PageToCrawl>(p => p.Uri == sharedLink), It.IsAny<CrawlContext>()))
+                    .Callback(() => Thread.Sleep(200))
+                    .Returns(new CrawlDecision { Allow = false, Reason = "Not crawled" });
+                _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPageLinks(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
+                _fakeCrawlDecisionMaker.Setup(f => f.ShouldRecrawlPage(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = false });
+
+                await _unitUnderTest.CrawlAsync(_rootUri);
+
+                _fakeCrawlDecisionMaker.Verify(f => f.ShouldCrawlPage(It.Is<PageToCrawl>(p => p.Uri == sharedLink), It.IsAny<CrawlContext>()), Times.Once());
+            }
+        }
+
+        [TestMethod]
         public async Task Crawl_ExtractedLinksAreNotCheckedTwice()
         {
             var fakeLink1 = new Uri("http://a.com/someUri");
