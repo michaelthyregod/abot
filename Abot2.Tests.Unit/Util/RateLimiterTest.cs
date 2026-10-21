@@ -2,13 +2,12 @@
 using Abot2.Util;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
-using System.Diagnostics;
 
 namespace Abot2.Tests.Unit.Util
 {
-    //Asserts upper time limits that other tests running at the same time could push it over
+    //Waiting is tested on a fake clock that only moves when a test advances it, so results never depend on machine load.
+    //WaitToProceed(0) answers "may it proceed now?" without blocking.
     [TestClass]
-    [DoNotParallelize]
     public class RateLimiterTest
     {
         RateLimiter _unitUnderTest;
@@ -36,48 +35,74 @@ namespace Abot2.Tests.Unit.Util
         [TestMethod]
         public void WaitToProceed_ZeroWait_DoesntWait()
         {
-            _unitUnderTest = new RateLimiter(1, TimeSpan.FromSeconds(0));
+            _unitUnderTest = new RateLimiter(1, TimeSpan.FromSeconds(0), new ManualTimeProvider());
 
-            var timer = Stopwatch.StartNew();
-
-            _unitUnderTest.WaitToProceed();
-            _unitUnderTest.WaitToProceed();
-            _unitUnderTest.WaitToProceed();
-
-            timer.Stop();
-
-            Assert.IsLessThan(1, timer.Elapsed.TotalSeconds);
+            Assert.IsTrue(_unitUnderTest.WaitToProceed(0));
+            Assert.IsTrue(_unitUnderTest.WaitToProceed(0));
+            Assert.IsTrue(_unitUnderTest.WaitToProceed(0));
         }
 
         [TestMethod]
         public void WaitToProceed_ValidWaitTime_Waits()
         {
-            _unitUnderTest = new RateLimiter(1, TimeSpan.FromMilliseconds(700));
+            var time = new ManualTimeProvider();
+            _unitUnderTest = new RateLimiter(1, TimeSpan.FromMilliseconds(700), time);
 
-            var timer = Stopwatch.StartNew();
+            Assert.IsTrue(_unitUnderTest.WaitToProceed(0), "The first call should not wait");
+            Assert.IsFalse(_unitUnderTest.WaitToProceed(0), "The second call should wait");
 
-            _unitUnderTest.WaitToProceed();//will not wait for first call
-            _unitUnderTest.WaitToProceed();
-            _unitUnderTest.WaitToProceed();
+            time.Advance(TimeSpan.FromMilliseconds(699));
+            Assert.IsFalse(_unitUnderTest.WaitToProceed(0), "The time unit has not passed yet");
 
-            timer.Stop();
+            time.Advance(TimeSpan.FromMilliseconds(1));
+            Assert.IsTrue(_unitUnderTest.WaitToProceed(0), "The time unit has passed");
+            Assert.IsFalse(_unitUnderTest.WaitToProceed(0), "The next call should wait a full time unit again");
 
-            Assert.IsGreaterThan(1, timer.Elapsed.TotalSeconds);
+            time.Advance(TimeSpan.FromMilliseconds(700));
+            Assert.IsTrue(_unitUnderTest.WaitToProceed(0));
+        }
+
+        [TestMethod]
+        public void WaitToProceed_FirstCallLaterThanCreation_WaitsAFullTimeUnitFromThatCall()
+        {
+            var time = new ManualTimeProvider();
+            _unitUnderTest = new RateLimiter(1, TimeSpan.FromMilliseconds(700), time);
+
+            //Called partway through the limiter's own timer cycle, so the wait must be measured from this call
+            time.Advance(TimeSpan.FromMilliseconds(300));
+            Assert.IsTrue(_unitUnderTest.WaitToProceed(0));
+            Assert.IsFalse(_unitUnderTest.WaitToProceed(0));
+
+            time.Advance(TimeSpan.FromMilliseconds(699));
+            Assert.IsFalse(_unitUnderTest.WaitToProceed(0), "700 ms have not passed since the first call");
+
+            time.Advance(TimeSpan.FromMilliseconds(1));
+            Assert.IsTrue(_unitUnderTest.WaitToProceed(0), "700 ms have passed since the first call");
+        }
+
+        [TestMethod]
+        public void WaitToProceed_MultipleOccurrences_AllowsThatManyPerTimeUnit()
+        {
+            var time = new ManualTimeProvider();
+            _unitUnderTest = new RateLimiter(2, TimeSpan.FromMilliseconds(100), time);
+
+            Assert.IsTrue(_unitUnderTest.WaitToProceed(0));
+            Assert.IsTrue(_unitUnderTest.WaitToProceed(0));
+            Assert.IsFalse(_unitUnderTest.WaitToProceed(0), "Only 2 calls are allowed per time unit");
+
+            time.Advance(TimeSpan.FromMilliseconds(100));
+            Assert.IsTrue(_unitUnderTest.WaitToProceed(0));
+            Assert.IsTrue(_unitUnderTest.WaitToProceed(0));
+            Assert.IsFalse(_unitUnderTest.WaitToProceed(0));
         }
 
         [TestMethod]
         public void WaitToProceed_ForCoverage()
         {
-            _unitUnderTest = new RateLimiter(1, TimeSpan.FromSeconds(1));
+            _unitUnderTest = new RateLimiter(1, TimeSpan.FromSeconds(1), new ManualTimeProvider());
 
-            var timer = Stopwatch.StartNew();
-
-            _unitUnderTest.WaitToProceed(TimeSpan.FromSeconds(10));
+            Assert.IsTrue(_unitUnderTest.WaitToProceed(TimeSpan.FromSeconds(10)), "A free slot should be taken without waiting");
             _unitUnderTest.Dispose();
-
-            timer.Stop();
-
-            Assert.IsLessThan(1, timer.Elapsed.TotalSeconds);
         }
 
         [TestMethod]

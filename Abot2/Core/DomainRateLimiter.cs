@@ -43,10 +43,20 @@ namespace Abot2.Core
 
         //Rate limiters replaced or removed while another thread may still be waiting on them, disposed with this instance
         readonly ConcurrentBag<IRateLimiter> _retiredRateLimiters = new ConcurrentBag<IRateLimiter>();
+        readonly TimeProvider _timeProvider;
         int _isDisposed;
 
         public DomainRateLimiter(long minCrawlDelayMillisecs)
+            : this(minCrawlDelayMillisecs, null)
         {
+        }
+
+        /// <param name="minCrawlDelayMillisecs">Default minimum delay between requests to the same domain</param>
+        /// <param name="timeProvider">Clock and timers for the rate limiters; if null, the system clock (TimeProvider.System). Pass a fake one to control time in tests.</param>
+        public DomainRateLimiter(long minCrawlDelayMillisecs, TimeProvider timeProvider)
+        {
+            _timeProvider = timeProvider;
+
             if (minCrawlDelayMillisecs < 0)
                 throw new ArgumentException("minCrawlDelayMillisecs");
 
@@ -95,7 +105,7 @@ namespace Abot2.Core
             var delayToUse = Math.Max(minCrawlDelayInMillisecs, _defaultMinCrawlDelayInMillisecs);
             if (delayToUse > 0)
             {
-                var rateLimiter = new RateLimiter(1, TimeSpan.FromMilliseconds(delayToUse));
+                var rateLimiter = new RateLimiter(1, TimeSpan.FromMilliseconds(delayToUse), _timeProvider);
 
                 _rateLimiterLookup.AddOrUpdate(uri.Authority, rateLimiter, (key, oldValue) =>
                 {
@@ -122,7 +132,7 @@ namespace Abot2.Core
 
             if (rateLimiter == null && minCrawlDelayInMillisecs > 0)
             {
-                var newRateLimiter = new RateLimiter(1, TimeSpan.FromMilliseconds(minCrawlDelayInMillisecs));
+                var newRateLimiter = new RateLimiter(1, TimeSpan.FromMilliseconds(minCrawlDelayInMillisecs), _timeProvider);
 
                 if (_rateLimiterLookup.TryAdd(uri.Authority, newRateLimiter))
                 {

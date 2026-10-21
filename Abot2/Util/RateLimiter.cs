@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.Threading;
 
 namespace Abot2.Util
@@ -33,15 +32,18 @@ namespace Abot2.Util
         // unit time.
         private readonly SemaphoreSlim _semaphore;
 
-        // Clock the exit times are measured on. Stopwatch is precise on every platform, unlike
-        // Environment.TickCount, which on .NET Framework only advances every ~15 ms and let waits end early.
-        private readonly Stopwatch _clock = Stopwatch.StartNew();
+        // Clock and timers. TimeProvider.System is precise on every platform, unlike Environment.TickCount,
+        // which on .NET Framework only advances every ~15 ms and let waits end early. Tests pass a fake one.
+        private readonly TimeProvider _timeProvider;
 
-        // Times (in milliseconds on _clock) at which the semaphore should be exited.
+        // Timestamp the exit times are measured from.
+        private readonly long _startTimestamp;
+
+        // Times (in ticks since _startTimestamp) at which the semaphore should be exited.
         private readonly ConcurrentQueue<long> _exitTimes;
 
-        // Timer used to trigger exiting the semaphore.
-        private readonly Timer _exitTimer;
+        // Timer used to trigger exiting the semaphore. Null when the time unit is zero, as there is nothing to limit.
+        private readonly ITimer _exitTimer;
 
         // Whether this instance is disposed (1) or not (0). An int so Dispose can set it atomically.
         private int _isDisposed;
@@ -66,6 +68,21 @@ namespace Abot2.Util
         /// If <paramref name="occurrences"/> or <paramref name="timeUnit"/> is negative.
         /// </exception>
         public RateLimiter(int occurrences, TimeSpan timeUnit)
+            : this(occurrences, timeUnit, null)
+        {
+        }
+
+        /// <summary>
+        /// Initializes a <see cref="RateLimiter"/> with a rate of <paramref name="occurrences"/>
+        /// per <paramref name="timeUnit"/>, measured with <paramref name="timeProvider"/>.
+        /// </summary>
+        /// <param name="occurrences">Number of occurrences allowed per unit of time.</param>
+        /// <param name="timeUnit">Length of the time unit.</param>
+        /// <param name="timeProvider">Clock and timers to use; if null, the system clock (TimeProvider.System). Pass a fake one to control time in tests.</param>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// If <paramref name="occurrences"/> or <paramref name="timeUnit"/> is negative.
+        /// </exception>
+        public RateLimiter(int occurrences, TimeSpan timeUnit, TimeProvider timeProvider)
         {
             // Check the arguments.
             if (occurrences <= 0)
@@ -78,6 +95,9 @@ namespace Abot2.Util
             Occurrences = occurrences;
             TimeUnitMilliseconds = (int)timeUnit.TotalMilliseconds;
 
+            _timeProvider = timeProvider ?? TimeProvider.System;
+            _startTimestamp = _timeProvider.GetTimestamp();
+
             // Create the semaphore, with the number of occurrences as the maximum count.
             _semaphore = new SemaphoreSlim(Occurrences, Occurrences);
 
@@ -86,7 +106,9 @@ namespace Abot2.Util
 
             // Create a timer to exit the semaphore. Use the time unit as the original
             // interval length because that's the earliest we will need to exit the semaphore.
-            _exitTimer = new Timer(ExitTimerCallback, null, TimeUnitMilliseconds, -1);
+            // A zero time unit limits nothing, and a timer rescheduling itself with no delay would keep a thread busy.
+            if (TimeUnitMilliseconds > 0)
+                _exitTimer = _timeProvider.CreateTimer(ExitTimerCallback, null, TimeSpan.FromMilliseconds(TimeUnitMilliseconds), Timeout.InfiniteTimeSpan);
         }
 
         /// <summary>
@@ -103,6 +125,9 @@ namespace Abot2.Util
 
             CheckDisposed();
 
+            if (_exitTimer == null)
+                return true;
+
             // Block until we can enter the semaphore or until the timeout expires.
             var entered = _semaphore.Wait(millisecondsTimeout);
 
@@ -110,7 +135,7 @@ namespace Abot2.Util
             // and add it to the queue.
             if (entered)
             {
-                var timeToExit = _clock.ElapsedMilliseconds + TimeUnitMilliseconds;
+                var timeToExit = ElapsedTicks() + TimeSpan.FromMilliseconds(TimeUnitMilliseconds).Ticks;
                 _exitTimes.Enqueue(timeToExit);
             }
 
@@ -159,7 +184,7 @@ namespace Abot2.Util
                 // The semaphore and timer both implement IDisposable and
                 // therefore must be disposed. The timer goes first so no new
                 // callbacks start; one that is already running is handled in ExitTimerCallback.
-                _exitTimer.Dispose();
+                _exitTimer?.Dispose();
                 _semaphore.Dispose();
             }
         }
@@ -179,7 +204,7 @@ namespace Abot2.Util
                 var exitTimeValid = _exitTimes.TryPeek(out exitTime);
                 while (exitTimeValid)
                 {
-                    if (exitTime - _clock.ElapsedMilliseconds > 0)
+                    if (exitTime - ElapsedTicks() > 0)
                     {
                         break;
                     }
@@ -190,15 +215,21 @@ namespace Abot2.Util
 
                 // we are already holding the next item from the queue, do not peek again
                 // although this exit time may have already pass by this stmt.
-                var timeUntilNextCheck = exitTimeValid ? Math.Min(TimeUnitMilliseconds, Math.Max(0, exitTime - _clock.ElapsedMilliseconds)) : TimeUnitMilliseconds;
+                var timeUnit = TimeSpan.FromMilliseconds(TimeUnitMilliseconds);
+                var timeUntilNextCheck = exitTimeValid ? TimeSpan.FromTicks(Math.Min(timeUnit.Ticks, Math.Max(0, exitTime - ElapsedTicks()))) : timeUnit;
 
-                _exitTimer.Change(timeUntilNextCheck, -1);
+                _exitTimer.Change(timeUntilNextCheck, Timeout.InfiniteTimeSpan);
             }
             catch (ObjectDisposedException)
             {
                 // Disposed while this callback was running. An unhandled exception on a
                 // timer thread would crash the process, so there is nothing more to do.
             }
+        }
+
+        private long ElapsedTicks()
+        {
+            return _timeProvider.GetElapsedTime(_startTimestamp).Ticks;
         }
 
         // Throws an ObjectDisposedException if this object is disposed.

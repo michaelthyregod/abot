@@ -244,7 +244,7 @@ The package now contains two builds:
 
 The minimum .NET Framework version is now **4.6.2**, because that is the oldest version Abot's updated dependencies support.
 
-On .NET 10 the package no longer pulls in `Microsoft.CSharp`, `System.Net.Http` or `System.Security.Cryptography.X509Certificates`, because they are part of .NET. On the `netstandard2.0` build, `System.Net.Http` (4.3.4) and `System.Security.Cryptography.X509Certificates` (4.3.2) are now explicit dependencies, which replaces the vulnerable 4.1.0 versions that NRobotsCore pulled in before (GHSA-7jgj-8wvc-jh57 and GHSA-7mfr-774f-w5r9).
+On .NET 10 the package no longer pulls in `Microsoft.CSharp`, `System.Net.Http` or `System.Security.Cryptography.X509Certificates`, because they are part of .NET. On the `netstandard2.0` build, `System.Net.Http` (4.3.4) and `System.Security.Cryptography.X509Certificates` (4.3.2) are now explicit dependencies, which replaces the vulnerable 4.1.0 versions that NRobotsCore pulled in before (GHSA-7jgj-8wvc-jh57 and GHSA-7mfr-774f-w5r9). The `netstandard2.0` build also depends on `Microsoft.Bcl.TimeProvider`, which provides `TimeProvider` (see [section 5.8](#58-rate-limiters-can-run-on-a-clock-you-control)); it is built into .NET 8 and later.
 
 ### Dependency upgrades
 
@@ -328,9 +328,26 @@ These need no action, but may change what you observe:
 - `PoliteWebCrawler` disposes the rate limiter and the robots.txt `PageRequester` it creates.
 - `WebCrawler` disposes the crawl timeout timer, and `TaskThreadManager` disposes the cancellation token source it creates.
 - A `RateLimiter` timer callback that runs after `Dispose` no longer crashes the process.
-- `RateLimiter` times waits with `Stopwatch`. On .NET Framework, 2.x used `Environment.TickCount`, which only advances every ~15 ms, so waits could end up to ~15 ms early.
+- `RateLimiter` measures waits precisely on every platform. On .NET Framework, 2.x used `Environment.TickCount`, which only advances every ~15 ms, so waits could end up to ~15 ms early.
+- A `RateLimiter` with a time unit of zero no longer keeps a thread busy. In 2.x its timer rescheduled itself with no delay for as long as the limiter existed.
 - `CompactCrawledUrlRepository`, the default crawled-URL store, now identifies URLs by a 64-bit hash that is the same in every process. 2.x used `Uri.GetHashCode()`: only 32 bits, so different URLs could share a hash (about 100 pairs per million URLs) and the second page was skipped as already crawled. On .NET Core and later that hash is also seeded randomly per process, so which page was skipped changed from run to run. Which URLs count as duplicates is unchanged.
 - `BloomFilter<string>` (used by `BloomFilterCrawledUrlRepository`) no longer uses `string.GetHashCode()`, so its results are the same on every run.
+
+### 5.8 Rate limiters can run on a clock you control
+
+`RateLimiter` and `DomainRateLimiter` have new constructor overloads that take a .NET `TimeProvider`. The existing constructors use the system clock, so nothing changes unless you pass one. This lets you test code that uses them without real waiting, for example with Microsoft's `FakeTimeProvider` (package `Microsoft.Extensions.TimeProvider.Testing`, for .NET 8 and later):
+
+```csharp
+var time = new FakeTimeProvider();
+using var rateLimiter = new RateLimiter(1, TimeSpan.FromSeconds(1), time);
+
+bool allowed = rateLimiter.WaitToProceed(0);   // true: the first call proceeds
+allowed = rateLimiter.WaitToProceed(0);        // false: it would have to wait
+time.Advance(TimeSpan.FromSeconds(1));
+allowed = rateLimiter.WaitToProceed(0);        // true: the second has passed
+```
+
+`WaitToProceed(0)` returns at once with whether the call may proceed now. `DomainRateLimiter(minCrawlDelayMillisecs, timeProvider)` passes the provider on to the rate limiter it creates for each domain.
 
 ## 6. Package changes
 
