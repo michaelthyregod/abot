@@ -1,6 +1,6 @@
 # Upgrading from Abot 2.x to 3.0
 
-Abot 3.0 modernises the library: it targets .NET 10 alongside .NET Standard 2.0, updates its dependencies to current, patched versions, and makes disposal and concurrency behave the way .NET developers expect. Most applications that only use `PoliteWebCrawler` with its default components upgrade without code changes. Applications that pass their own components into the crawler, or that derive from Abot's classes, need to read the sections below.
+Abot 3.0 modernises the library: it targets .NET 10 alongside .NET Standard 2.0, updates its dependencies to current, patched versions, and makes disposal and concurrency behave the way .NET developers expect. The crawler now runs on async workers instead of blocking threads, takes a `CancellationToken`, and no longer polls. Most applications that only use `PoliteWebCrawler` with its default components upgrade without code changes, apart from passing a `CancellationToken` instead of a `CancellationTokenSource`. Applications that pass their own components into the crawler, implement Abot's interfaces, or derive from Abot's classes need to read the sections below.
 
 3.0 is currently published as a pre-release:
 
@@ -18,6 +18,11 @@ dotnet add package Abot --version 3.0.0-preview.1
 | [Dependency upgrades](#4-supported-platforms-and-dependencies) | Apps using AngleSharp or Serilog APIs directly, or older Serilog sinks | Check the AngleSharp and Serilog versions you use |
 | [`HttpServicePointConnectionLimit` now applies on .NET 10](#51-httpservicepointconnectionlimit-now-works-on-net-10) | Apps on .NET 10+ that relied on unlimited connections per host | Raise the limit or set it to `0` |
 | [Other behaviour changes](#5-behaviour-changes) | Mostly subclasses of `WebCrawler` | Review the list |
+| [Async workers; thread managers are obsolete](#61-pages-are-processed-by-async-workers-thread-managers-are-obsolete) | Anyone passing a thread manager, or relying on more than `MaxConcurrentThreads` requests at once | Use the constructors without a thread manager; tune `MaxConcurrentThreads` |
+| [`CrawlAsync` takes a `CancellationToken`](#62-crawlasync-takes-a-cancellationtoken) | Anyone passing a `CancellationTokenSource` to `CrawlAsync` | Pass `source.Token` instead |
+| [Interfaces take a `CancellationToken`; `IScheduler` changed](#63-interface-changes) | Anyone implementing Abot's interfaces | Add the parameters and the new `IScheduler` members |
+| [New protected members on `WebCrawler`](#64-classes-that-derive-from-webcrawler) | Subclasses overriding `ProcessPage`, `CrawlThePage`, `CrawlSite`, `WaitMinimumRetryDelay` or `CrawlAsync` | Override the `CancellationToken` overloads |
+| [`DomainRateLimiter` internals replaced](#65-classes-that-derive-from-domainratelimiter) | Subclasses of `DomainRateLimiter` | Override `GetDomainSchedule` instead of `GetRateLimiter` |
 
 ## 1. Abot no longer disposes objects you pass in
 
@@ -32,7 +37,7 @@ These constructor parameters were disposed by Abot in 2.x and must now be dispos
 
 | Constructor | Parameters you now dispose yourself |
 |---|---|
-| `WebCrawler` / `PoliteWebCrawler` | `threadManager`, `scheduler`, `pageRequester`, `memoryManager` |
+| `WebCrawler` / `PoliteWebCrawler` | `scheduler`, `pageRequester`, `memoryManager`, and `threadManager` on the [obsolete constructors](#61-pages-are-processed-by-async-workers-thread-managers-are-obsolete) |
 | `PageRequester` | `httpClient` |
 | `Scheduler` | `crawledUrlRepo`, `pagesToCrawlRepo` |
 | `MemoryManager` | `memoryMonitor` |
@@ -71,11 +76,13 @@ var config = new CrawlConfiguration();
 using var contentExtractor = new WebContentExtractor();
 using var pageRequester = new PageRequester(config, contentExtractor);
 using var scheduler = new Scheduler();
-using var crawler = new PoliteWebCrawler(config, null, null, scheduler, pageRequester, null, null, null, null);
+using var crawler = new PoliteWebCrawler(config, null, scheduler, pageRequester, null, null, null, null);
 
 await crawler.CrawlAsync(new Uri("https://example.com/"));
 // crawler, scheduler, pageRequester and contentExtractor are disposed here, in that order
 ```
+
+The 3.0 constructor no longer has a thread manager parameter (see [section 6.1](#61-pages-are-processed-by-async-workers-thread-managers-are-obsolete)), so it takes one argument fewer.
 
 ### Example: sharing one `HttpClient` across crawls
 
@@ -92,26 +99,13 @@ async Task<CrawlResult> CrawlAsync(Uri site)
 
     using var contentExtractor = new WebContentExtractor();
     using var pageRequester = new PageRequester(config, contentExtractor, httpClient);
-    using var crawler = new PoliteWebCrawler(config, null, null, null, pageRequester, null, null, null, null);
+    using var crawler = new PoliteWebCrawler(config, null, null, pageRequester, null, null, null, null);
 
     return await crawler.CrawlAsync(site);   // httpClient is still usable afterwards
 }
 ```
 
 When you pass in an `HttpClient`, `PageRequester` uses it as it is. The HTTP settings in `CrawlConfiguration` (user agent, timeout, redirects, cookies, decompression, certificate validation, login and connection limit) are only applied to the client Abot builds itself, so configure your own client accordingly.
-
-### Example: thread manager with your own cancellation token source
-
-```csharp
-using var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromMinutes(5));
-using var threadManager = new TaskThreadManager(10, cancellationTokenSource);
-using var crawler = new PoliteWebCrawler(new CrawlConfiguration(), null, threadManager, null, null, null, null, null, null);
-
-var result = await crawler.CrawlAsync(new Uri("https://example.com/"));
-// The thread manager cancels the token source on AbortAll()/Dispose(), but, as in 2.x, does not dispose it
-```
-
-As in 2.x, a thread manager can only be used for one crawl: when a crawl ends, the crawler calls `AbortAll()` on a thread manager you passed in (and disposes one it created itself). Create a new thread manager, or let the crawler create one, for each crawl.
 
 ### Example: memory monitoring
 
@@ -123,7 +117,7 @@ var config = new CrawlConfiguration { MaxMemoryUsageInMb = 1024 };
 using var gcMonitor = new GcMemoryMonitor();
 using var cachedMonitor = new CachedMemoryMonitor(gcMonitor, cacheExpirationInSeconds: 5);
 using var memoryManager = new MemoryManager(cachedMonitor);
-using var crawler = new PoliteWebCrawler(config, null, null, null, null, null, memoryManager, null, null);
+using var crawler = new PoliteWebCrawler(config, null, null, null, null, memoryManager, null, null);
 ```
 
 If you don't need a custom monitor, leave `memoryManager` as `null` and Abot creates and disposes one for you whenever a memory limit is configured.
@@ -179,7 +173,7 @@ public class MyCrawler : PoliteWebCrawler
 }
 ```
 
-The same applies to custom thread managers:
+The same applies to custom thread managers, if you still have one ([thread managers are obsolete](#61-pages-are-processed-by-async-workers-thread-managers-are-obsolete)):
 
 ```csharp
 public class MyThreadManager : ThreadManager
@@ -224,7 +218,7 @@ In 2.x, using an Abot object after disposing it usually failed with a `NullRefer
 | `PageRequester` | `MakeRequestAsync` |
 | `Scheduler` | `Count`, `Add`, `GetNext`, `Clear`, `AddKnownUri`, `IsUriKnown` |
 | `ThreadManager` and derived classes | `DoWork` (was `InvalidOperationException`; after `AbortAll()` it is still `InvalidOperationException`) |
-| `DomainRateLimiter` | `RateLimit`, `AddDomain`, `AddOrUpdateDomain` |
+| `DomainRateLimiter` | `RateLimitAsync`, `RateLimit`, `AddDomain`, `AddOrUpdateDomain` |
 | `RateLimiter` | `WaitToProceed` (unchanged, but the message is now the type name) |
 | `FifoPagesToCrawlRepository` | `Add`, `GetNext`, `Clear`, `Count` |
 | `InMemoryCrawledUrlRepository`, `CompactCrawledUrlRepository` | `Contains`, `AddIfNew` |
@@ -248,7 +242,7 @@ The minimum .NET Framework version is now **4.6.2**, because that is the oldest 
 Dependencies now differ per build:
 
 - **`net10.0`** no longer pulls in `Microsoft.CSharp`, `System.Net.Http` or `System.Security.Cryptography.X509Certificates`, because they are part of .NET.
-- **`net462`** uses `Microsoft.CSharp`, `System.Net.Http` and `System.Net.Http.WebRequest` from .NET Framework itself, so it doesn't pull in those packages either, including the vulnerable `System.Net.Http` 4.1.0 that NRobotsCore brought in through 2.x's .NET Standard build. It depends on `Microsoft.Bcl.TimeProvider`, which provides `TimeProvider` (see [section 5.8](#58-rate-limiters-can-run-on-a-clock-you-control)).
+- **`net462`** uses `Microsoft.CSharp`, `System.Net.Http` and `System.Net.Http.WebRequest` from .NET Framework itself, so it doesn't pull in those packages either, including the vulnerable `System.Net.Http` 4.1.0 that NRobotsCore brought in through 2.x's .NET Standard build. It depends on `Microsoft.Bcl.TimeProvider`, which provides `TimeProvider` (see [section 5.8](#58-abot-can-run-on-a-clock-you-control)).
 - **`netstandard2.0`** has `System.Net.Http` (4.3.4) and `System.Security.Cryptography.X509Certificates` (4.3.2) as explicit dependencies. They replace the vulnerable 4.1.0 versions that NRobotsCore pulled in before (GHSA-7jgj-8wvc-jh57 and GHSA-7mfr-774f-w5r9). It also depends on `Microsoft.Bcl.TimeProvider`; `TimeProvider` is built into .NET 8 and later.
 
 ### Dependency upgrades
@@ -314,7 +308,7 @@ if (result.ErrorOccurred)
 
 ### 5.4 `AddPageToContext` is called before `ProcessPage`
 
-`WebCrawler` now calls `AddPageToContext` while it dequeues the next page, under the same lock that guards `MaxPagesToCrawl`, and then calls `ProcessPage`. In 2.x, `ProcessPage` called `AddPageToContext` itself. If you override `ProcessPage` without calling the base implementation, `AddPageToContext` is now still called for every page; don't call it again from your override.
+`WebCrawler` now calls `AddPageToContext` when a worker takes the next page from the scheduler, and then calls `ProcessPage`. In 2.x, `ProcessPage` called `AddPageToContext` itself. If you override `ProcessPage` without calling the base implementation, `AddPageToContext` is now still called for every page; don't call it again from your override.
 
 ### 5.5 Very deeply nested HTML is flattened in `AngleSharpHtmlDocument`
 
@@ -322,7 +316,9 @@ AngleSharp 1.x processes the document tree recursively, so a malformed or hostil
 
 ### 5.6 `DomainRateLimiter` is disposable and shares limits correctly
 
-`DomainRateLimiter` now implements `IDisposable` and releases the timer and semaphore of every per-domain limiter it created. If you create one yourself, dispose it. When two threads added the same domain at the same time, 2.x could give one of them a separate limiter, so that domain was not rate limited correctly. 3.0 always uses one limiter per domain.
+`DomainRateLimiter` now implements `IDisposable`; after `Dispose` its methods throw `ObjectDisposedException`. If you create one yourself, dispose it. When two threads added the same domain at the same time, 2.x could give one of them a separate limiter, so that domain was not rate limited correctly. 3.0 always keeps one schedule per domain.
+
+It also no longer blocks threads: `RateLimitAsync` waits asynchronously until the domain's minimum delay since the previous request has passed, and can be cancelled. The delays are unchanged, including the 20 ms that is added to `MinCrawlDelayPerDomainMilliSeconds`. See [section 6.5](#65-classes-that-derive-from-domainratelimiter) if you derive from it.
 
 ### 5.7 Fixes you get automatically
 
@@ -331,30 +327,181 @@ These need no action, but may change what you observe:
 - `PageRequester` creates exactly one `HttpClient`, even when the first requests run at the same time. 2.x could create several and leak all but one.
 - A link found on several pages that are crawled at the same time is evaluated once. In 2.x, `ShouldCrawlPage` (and your `ShouldScheduleLinkDecisionMaker`) could be called for it more than once, and `PageCrawlDisallowed` could fire more than once for the same link.
 - `PoliteWebCrawler` disposes the rate limiter and the robots.txt `PageRequester` it creates.
-- `WebCrawler` disposes the crawl timeout timer, and `TaskThreadManager` disposes the cancellation token source it creates.
+- The crawl timeout no longer uses a timer that could outlive the crawl, and `TaskThreadManager` disposes the cancellation token source it creates.
+- When a redirect is not followed automatically, a redirect target that is already known (crawled, scheduled or evaluated before) is skipped without being evaluated again. 2.x called `ShouldCrawlPage` for it, and could fire `PageCrawlDisallowed` for it, before dropping it as a duplicate.
 - A `RateLimiter` timer callback that runs after `Dispose` no longer crashes the process.
 - `RateLimiter` measures waits precisely on every platform. On .NET Framework, 2.x used `Environment.TickCount`, which only advances every ~15 ms, so waits could end up to ~15 ms early.
 - A `RateLimiter` with a time unit of zero no longer keeps a thread busy. In 2.x its timer rescheduled itself with no delay for as long as the limiter existed.
 - `CompactCrawledUrlRepository`, the default crawled-URL store, now identifies URLs by a 64-bit hash that is the same in every process. 2.x used `Uri.GetHashCode()`: only 32 bits, so different URLs could share a hash (about 100 pairs per million URLs) and the second page was skipped as already crawled. On .NET Core and later that hash is also seeded randomly per process, so which page was skipped changed from run to run. Which URLs count as duplicates is unchanged.
 - `BloomFilter<string>` (used by `BloomFilterCrawledUrlRepository`) no longer uses `string.GetHashCode()`, so its results are the same on every run.
 
-### 5.8 Rate limiters can run on a clock you control
+### 5.8 Abot can run on a clock you control
 
-`RateLimiter` and `DomainRateLimiter` have new constructor overloads that take a .NET `TimeProvider`. The existing constructors use the system clock, so nothing changes unless you pass one. This lets you test code that uses them without real waiting, for example with Microsoft's `FakeTimeProvider` (package `Microsoft.Extensions.TimeProvider.Testing`, for .NET 8 and later):
+Everything in Abot that waits or reads the time can take a .NET `TimeProvider`: the crawl timeout, the politeness delay, the retry delay, `CachedMemoryMonitor`'s refresh, and the timestamps on `CrawlContext` and `CrawledPage`. These constructors have a new optional `timeProvider` parameter:
+
+- `PoliteWebCrawler` (the constructor without a thread manager) and `WebCrawler` (protected, for subclasses)
+- `PageRequester`, `CachedMemoryMonitor` and `DomainRateLimiter`
+- `RateLimiter` (obsolete, see [section 6.5](#65-classes-that-derive-from-domainratelimiter))
+
+If you pass nothing, Abot uses the system clock, so nothing changes. Passing a fake clock lets you test code that uses Abot without real waiting, for example with Microsoft's `FakeTimeProvider` (package `Microsoft.Extensions.TimeProvider.Testing`, for .NET 8 and later):
 
 ```csharp
 var time = new FakeTimeProvider();
-using var rateLimiter = new RateLimiter(1, TimeSpan.FromSeconds(1), time);
+using var rateLimiter = new DomainRateLimiter(1000, time);   // 1000 ms + Abot's 20 ms margin per domain
+var page = new Uri("https://example.com/");
 
-bool allowed = rateLimiter.WaitToProceed(0);   // true: the first call proceeds
-allowed = rateLimiter.WaitToProceed(0);        // false: it would have to wait
-time.Advance(TimeSpan.FromSeconds(1));
-allowed = rateLimiter.WaitToProceed(0);        // true: the second has passed
+await rateLimiter.RateLimitAsync(page);           // the first request to a domain proceeds at once
+var second = rateLimiter.RateLimitAsync(page);    // the next one waits for the delay
+time.Advance(TimeSpan.FromMilliseconds(1019));    // second.IsCompleted is still false
+time.Advance(TimeSpan.FromMilliseconds(1));
+await second;                                     // completes exactly when the delay has passed
 ```
 
-`WaitToProceed(0)` returns at once with whether the call may proceed now. `DomainRateLimiter(minCrawlDelayMillisecs, timeProvider)` passes the provider on to the rate limiter it creates for each domain.
+A crawler built with a fake clock only times out, finishes politeness and retry waits, and moves its timestamps when you advance the clock.
 
-## 6. Package changes
+## 6. Async crawl engine and cancellation
+
+### 6.1 Pages are processed by async workers; thread managers are obsolete
+
+The crawler no longer runs pages through an `IThreadManager`. It starts `CrawlConfiguration.MaxConcurrentThreads` async workers (`Environment.ProcessorCount` if it is 0 or less). Each worker takes the next page and processes it completely: the politeness and retry waits, the request, parsing, scheduling its links and firing its events. Then it takes the next one. Waiting does not block a thread.
+
+This changes what you can observe:
+
+- **`MaxConcurrentThreads` is now a real limit.** In 2.x each page gave its thread back at its first `await`, so many more requests than `MaxConcurrentThreads` could be in flight at once. In 3.0 at most `MaxConcurrentThreads` pages are processed at the same time, including pages waiting for the politeness or retry delay. If crawls of many domains become slower, raise `MaxConcurrentThreads`.
+- **Crawls finish as soon as the work is done.** 2.x checked for remaining work every 2.5 seconds, so every crawl took up to 2.5 seconds longer than needed. A stop, hard stop, cancellation or timeout now also takes effect straight away.
+- **No threads are blocked while waiting**, so many crawls can run in one process without starving the thread pool.
+
+`IThreadManager`, `ThreadManager`, `TaskThreadManager` and `ManualThreadManager` are obsolete, and so are the `WebCrawler` and `PoliteWebCrawler` constructors that take an `IThreadManager`. Those constructors still work: the thread manager's `MaxThreads` sets how many pages are processed at the same time, but the crawler doesn't use it otherwise. It never calls `DoWork` or `AbortAll` on it and doesn't dispose it. The thread manager types themselves still work as before, for code that uses them directly.
+
+**2.x**:
+
+```csharp
+using var threadManager = new TaskThreadManager(20);
+using var crawler = new PoliteWebCrawler(config, null, threadManager, null, null, null, null, null, null);
+```
+
+**3.0**:
+
+```csharp
+config.MaxConcurrentThreads = 20;
+using var crawler = new PoliteWebCrawler(config);
+```
+
+If you used a thread manager for your own work, use `Task.Run` with `SemaphoreSlim.WaitAsync`, or `Parallel.ForEachAsync` on .NET 6 and later.
+
+### 6.2 `CrawlAsync` takes a `CancellationToken`
+
+`CrawlAsync(Uri uri, CancellationToken cancellationToken = default)` replaces `CrawlAsync(Uri)` and `CrawlAsync(Uri, CancellationTokenSource)`. The `CancellationTokenSource` overload is obsolete but still works.
+
+**2.x**:
+
+```csharp
+using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+var result = await crawler.CrawlAsync(new Uri("https://example.com/"), cancellation);
+```
+
+**3.0**:
+
+```csharp
+using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+var result = await crawler.CrawlAsync(new Uri("https://example.com/"), cancellation.Token);
+```
+
+A cancellation is reported as before: `CrawlResult.ErrorOccurred` is `true`, `ErrorException` is an `OperationCanceledException`, and `CrawlContext.IsCrawlHardStopRequested` is `true`.
+
+What is new is that a cancellation, a hard stop (`CrawlContext.IsCrawlHardStopRequested = true`) or `CrawlTimeoutSeconds` now also **cancels the requests and waits in progress**. In 2.x they let pages in progress finish their request first. A page whose request is cancelled is not completed, so `PageCrawlCompleted` does not fire for it. A plain stop (`IsCrawlStopRequested`) still lets the pages in progress finish.
+
+`CrawlContext.CancellationTokenSource` is now a source that the crawler creates for each crawl and links to your token. Cancelling it from an event handler or a decision delegate still cancels the crawl, as in 2.x. It is disposed when the crawl ends, so don't keep it for later.
+
+### 6.3 Interface changes
+
+If you implement any of these interfaces, update your implementation. Code that only calls them compiles unchanged, because the new parameters are optional. Assemblies compiled against 2.x must be recompiled.
+
+| Interface | 2.x | 3.0 |
+|---|---|---|
+| `IWebCrawler` | `CrawlAsync(Uri)`, `CrawlAsync(Uri, CancellationTokenSource)` | `CrawlAsync(Uri, CancellationToken = default)`; the `CancellationTokenSource` overload is obsolete |
+| `IPageRequester` | `MakeRequestAsync(Uri)`, `MakeRequestAsync(Uri, Func<…>)` | both take a last `CancellationToken cancellationToken = default` |
+| `IWebContentExtractor` | `GetContentAsync(HttpResponseMessage)` | `GetContentAsync(HttpResponseMessage, CancellationToken = default)` |
+| `IRobotsDotTextFinder` | `FindAsync(Uri)` | `FindAsync(Uri, CancellationToken = default)` |
+| `IDomainRateLimiter` | `RateLimit(Uri)` | new `RateLimitAsync(Uri, CancellationToken = default)`; `RateLimit` is obsolete |
+| `IScheduler` | `void AddKnownUri(Uri)` | `bool AddKnownUri(Uri)`, and new `AddKnownPage(PageToCrawl)` |
+
+Honour the token: the crawler cancels it on cancellation, hard stop and timeout, and a request that ignores it keeps the crawl waiting until it finishes. When the token is cancelled, throw an `OperationCanceledException`, for example with `cancellationToken.ThrowIfCancellationRequested()` or by passing the token on to `HttpClient`, instead of returning a page with an error.
+
+`IScheduler` changed so that the crawler can schedule links without locks:
+
+- `AddKnownUri(Uri)` marks a URI as known and returns `true` only if it wasn't known yet. It must be atomic: when two threads add the same URI at the same time, exactly one of them gets `true`.
+- `AddKnownPage(PageToCrawl)` schedules a page whose URI the crawler has already marked as known, without checking for duplicates again.
+
+```csharp
+public class MyScheduler : IScheduler
+{
+    private readonly ConcurrentDictionary<string, byte> _known = new ConcurrentDictionary<string, byte>();
+    private readonly ConcurrentQueue<PageToCrawl> _pages = new ConcurrentQueue<PageToCrawl>();
+
+    public bool AddKnownUri(Uri uri) => _known.TryAdd(uri.AbsoluteUri, 0);
+
+    public void AddKnownPage(PageToCrawl page) => _pages.Enqueue(page);
+
+    public void Add(PageToCrawl page)
+    {
+        if (page.IsRetry || AddKnownUri(page.Uri))
+            _pages.Enqueue(page);
+    }
+
+    // Count, GetNext, Clear, IsUriKnown, Add(IEnumerable<PageToCrawl>) and Dispose as before
+}
+```
+
+### 6.4 Classes that derive from `WebCrawler`
+
+The protected methods the crawler calls now take a `CancellationToken`. The old overloads are obsolete, and **the crawler no longer calls them**, so an override of an old overload is silently skipped. The compiler warns about each one (`CS0672: Member overrides obsolete member`). Move the code to the new overload:
+
+| Override in 2.x | Override in 3.0 |
+|---|---|
+| `CrawlAsync(Uri, CancellationTokenSource)` | `CrawlAsync(Uri, CancellationToken)` |
+| `CrawlSite()` | `CrawlSite(CancellationToken)` |
+| `ProcessPage(PageToCrawl)` | `ProcessPage(PageToCrawl, CancellationToken)` |
+| `CrawlThePage(PageToCrawl)` | `CrawlThePage(PageToCrawl, CancellationToken)` |
+| `WaitMinimumRetryDelay(PageToCrawl)` (blocking) | `WaitMinimumRetryDelayAsync(PageToCrawl, CancellationToken)` |
+
+**2.x**:
+
+```csharp
+protected override async Task<CrawledPage> CrawlThePage(PageToCrawl pageToCrawl)
+{
+    _log.Add(pageToCrawl.Uri);
+    return await base.CrawlThePage(pageToCrawl);
+}
+```
+
+**3.0**:
+
+```csharp
+protected override async Task<CrawledPage> CrawlThePage(PageToCrawl pageToCrawl, CancellationToken cancellationToken)
+{
+    _log.Add(pageToCrawl.Uri);
+    return await base.CrawlThePage(pageToCrawl, cancellationToken);
+}
+```
+
+Other changes for subclasses:
+
+- **New `BeforeRequestAsync(PageToCrawl, CancellationToken)`** runs before each request, after `PageCrawlStarting` has fired. `PoliteWebCrawler` overrides it to wait for the domain's politeness delay, so if you override it in a subclass of `PoliteWebCrawler`, call the base implementation.
+- **New `SignalWorkChanged()`**: the workers wait for a signal instead of polling. If your subclass adds pages to the scheduler outside `SchedulePageLinks`, `ProcessRedirect` or a retry, call `SignalWorkChanged()` afterwards, so idle workers pick them up.
+- **New `TimeProvider` property and `Now()` method**: use them instead of `DateTime.Now` so that your subclass follows the crawler's clock ([section 5.8](#58-abot-can-run-on-a-clock-you-control)).
+- **Constructors**: the protected `WebCrawler` constructor without a thread manager takes an optional `TimeProvider`. The constructor with an `IThreadManager` is obsolete ([section 6.1](#61-pages-are-processed-by-async-workers-thread-managers-are-obsolete)).
+- **Obsolete fields**: `_threadManager` holds the thread manager passed to an obsolete constructor, and is not used. `_timeoutTimer` is always `null`, because the crawl timeout is now a cancellation token.
+
+### 6.5 Classes that derive from `DomainRateLimiter`
+
+`DomainRateLimiter` no longer keeps an `IRateLimiter` per domain. The protected field `_rateLimiterLookup` and the protected method `GetRateLimiter(Uri, long)` are removed. They are replaced by `GetDomainSchedule(Uri, long)`, which returns the domain's `DomainSchedule` (its delay and the earliest time its next request may start). Override `GetDomainSchedule` if you need to change how a domain's delay is chosen.
+
+`DomainRateLimiter` also has a new public `GetMinCrawlDelay(Uri)`, which returns the delay used for a domain, or `null` if it has none.
+
+`IRateLimiter` and `RateLimiter` are obsolete, because Abot no longer uses them. They still work as before. For general-purpose rate limiting, use `System.Threading.RateLimiting`.
+
+## 7. Package changes
 
 - The package includes XML documentation (`Abot2.xml`), so IntelliSense shows descriptions of Abot's types and members.
 - The package icon is embedded in the package. The old icon URL no longer worked.
@@ -369,3 +516,8 @@ allowed = rateLimiter.WaitToProceed(0);        // true: the second has passed
 6. On .NET 10 or later, decide whether the default limit of 200 connections per host suits you ([section 5.1](#51-httpservicepointconnectionlimit-now-works-on-net-10)).
 7. Update Serilog sinks and enrichers to versions that support Serilog 4, and check direct use of AngleSharp APIs against AngleSharp 1.x.
 8. Replace `catch (InvalidOperationException)` around `ThreadManager.DoWork` with `catch (ObjectDisposedException)` if you used it to detect a disposed thread manager.
+9. Pass a `CancellationToken` to `CrawlAsync` instead of a `CancellationTokenSource` ([section 6.2](#62-crawlasync-takes-a-cancellationtoken)).
+10. Replace constructors that take a thread manager with the ones without, and set `CrawlConfiguration.MaxConcurrentThreads` instead. Check that it allows enough pages at the same time, because it is now enforced ([section 6.1](#61-pages-are-processed-by-async-workers-thread-managers-are-obsolete)).
+11. If you implement Abot's interfaces, add the `CancellationToken` parameters and honour them, and update `IScheduler` implementations for `bool AddKnownUri` and `AddKnownPage` ([section 6.3](#63-interface-changes)).
+12. If you derive from `WebCrawler`, fix every `CS0672` warning by overriding the `CancellationToken` overload instead: the crawler no longer calls the old ones ([section 6.4](#64-classes-that-derive-from-webcrawler)). If you derive from `DomainRateLimiter`, move `GetRateLimiter` overrides to `GetDomainSchedule` ([section 6.5](#65-classes-that-derive-from-domainratelimiter)).
+13. Recompile everything that references Abot, because method signatures changed.
