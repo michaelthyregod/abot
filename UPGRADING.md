@@ -235,16 +235,21 @@ If you catch `InvalidOperationException` from `ThreadManager.DoWork` to detect a
 
 ### Target frameworks
 
-The package now contains two builds:
+The package now contains three builds, where 2.x had one (`netstandard2.0`):
 
 | Your application runs on | Build used |
 |---|---|
 | .NET 10 or later | `net10.0` |
-| .NET Framework 4.6.2 or later, .NET Core 2.0 to .NET 9, and other .NET Standard 2.0 platforms | `netstandard2.0` |
+| .NET Framework 4.6.2 to 4.8.1 | `net462` |
+| .NET Core 2.0 to .NET 9, and other .NET Standard 2.0 platforms such as Mono and Unity | `netstandard2.0` |
 
-The minimum .NET Framework version is now **4.6.2**, because that is the oldest version Abot's updated dependencies support.
+The minimum .NET Framework version is now **4.6.2**, because that is the oldest version Abot's updated dependencies support. .NET Framework applications now get a build made for .NET Framework instead of the .NET Standard one, which avoids the extra facade assemblies and binding redirects that .NET Standard libraries can need on .NET Framework 4.6.2 to 4.7.1.
 
-On .NET 10 the package no longer pulls in `Microsoft.CSharp`, `System.Net.Http` or `System.Security.Cryptography.X509Certificates`, because they are part of .NET. On the `netstandard2.0` build, `System.Net.Http` (4.3.4) and `System.Security.Cryptography.X509Certificates` (4.3.2) are now explicit dependencies, which replaces the vulnerable 4.1.0 versions that NRobotsCore pulled in before (GHSA-7jgj-8wvc-jh57 and GHSA-7mfr-774f-w5r9). The `netstandard2.0` build also depends on `Microsoft.Bcl.TimeProvider`, which provides `TimeProvider` (see [section 5.8](#58-rate-limiters-can-run-on-a-clock-you-control)); it is built into .NET 8 and later.
+Dependencies now differ per build:
+
+- **`net10.0`** no longer pulls in `Microsoft.CSharp`, `System.Net.Http` or `System.Security.Cryptography.X509Certificates`, because they are part of .NET.
+- **`net462`** uses `Microsoft.CSharp`, `System.Net.Http` and `System.Net.Http.WebRequest` from .NET Framework itself, so it doesn't pull in those packages either, including the vulnerable `System.Net.Http` 4.1.0 that NRobotsCore brought in through 2.x's .NET Standard build. It depends on `Microsoft.Bcl.TimeProvider`, which provides `TimeProvider` (see [section 5.8](#58-rate-limiters-can-run-on-a-clock-you-control)).
+- **`netstandard2.0`** has `System.Net.Http` (4.3.4) and `System.Security.Cryptography.X509Certificates` (4.3.2) as explicit dependencies. They replace the vulnerable 4.1.0 versions that NRobotsCore pulled in before (GHSA-7jgj-8wvc-jh57 and GHSA-7mfr-774f-w5r9). It also depends on `Microsoft.Bcl.TimeProvider`; `TimeProvider` is built into .NET 8 and later.
 
 ### Dependency upgrades
 
@@ -275,7 +280,7 @@ Your application now gets Serilog 4.4.0 or later. If you use other Serilog sinks
 
 `CrawlConfiguration.HttpServicePointConnectionLimit` (default 200) limits the number of concurrent connections per host. In 2.x it set `ServicePointManager.DefaultConnectionLimit`, which has no effect on `HttpClient` on .NET Core and later, so on modern .NET the limit was silently ignored.
 
-On the `net10.0` build it now sets `HttpClientHandler.MaxConnectionsPerServer`, so a crawl on .NET 10 or later really is limited to 200 connections per host by default. On the `netstandard2.0` build nothing changes: the limit works on .NET Framework, and is still ignored on .NET Core 2.0 to .NET 9.
+On the `net10.0` build it now sets `HttpClientHandler.MaxConnectionsPerServer`, so a crawl on .NET 10 or later really is limited to 200 connections per host by default. Nothing changes on the other builds: on .NET Framework (`net462`) the limit works as before, and on .NET Core 2.0 to .NET 9 (`netstandard2.0`) it is still ignored.
 
 To keep the 2.x behaviour on .NET 10 (no limit set by Abot), set it to `0`:
 

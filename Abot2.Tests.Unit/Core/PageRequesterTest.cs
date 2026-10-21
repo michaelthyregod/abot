@@ -283,7 +283,12 @@ namespace Abot2.Tests.Unit.Core
             var configuredHandler = unitUnderTest.ConfiguredHandler;
             Assert.AreEqual(DecompressionMethods.GZip | DecompressionMethods.Deflate, configuredHandler.AutomaticDecompression);
             Assert.IsTrue(configuredHandler.UseCookies);
+#if NETFRAMEWORK
+            //Abot's .NET Framework build uses WebRequestHandler, as HttpClientHandler's callback needs .NET Framework 4.7.1
+            Assert.IsNotNull(((WebRequestHandler)configuredHandler).ServerCertificateValidationCallback);
+#else
             Assert.IsNotNull(configuredHandler.ServerCertificateCustomValidationCallback);
+#endif
             Assert.IsNotNull(configuredHandler.Credentials);
 
             unitUnderTest.Dispose();

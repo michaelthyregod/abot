@@ -207,7 +207,12 @@ namespace Abot2.Core
             if(rootUri == null)
                 throw new ArgumentNullException(nameof(rootUri));
 
+#if NETFRAMEWORK
+            //HttpClientHandler.ServerCertificateCustomValidationCallback needs .NET Framework 4.7.1, WebRequestHandler has a per-handler equivalent
+            var httpClientHandler = new WebRequestHandler
+#else
             var httpClientHandler = new HttpClientHandler
+#endif
             {
                 MaxAutomaticRedirections = _config.HttpRequestMaxAutoRedirects,
                 UseDefaultCredentials = _config.UseDefaultCredentials
@@ -232,8 +237,13 @@ namespace Abot2.Core
             }
 
             if (!_config.IsSslCertificateValidationEnabled)
+#if NETFRAMEWORK
+                httpClientHandler.ServerCertificateValidationCallback +=
+                    (sender, certificate, chain, sslPolicyErrors) => true;
+#else
                 httpClientHandler.ServerCertificateCustomValidationCallback +=
                     (sender, certificate, chain, sslPolicyErrors) => true;
+#endif
 
             if (_config.IsAlwaysLogin && rootUri != null)
             {
