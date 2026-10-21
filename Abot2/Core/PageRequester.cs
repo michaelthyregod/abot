@@ -36,8 +36,10 @@ namespace Abot2.Core
 
             _contentExtractor = contentExtractor ?? throw new ArgumentNullException(nameof(contentExtractor));
 
+#if !NET
             if (_config.HttpServicePointConnectionLimit > 0)
                 ServicePointManager.DefaultConnectionLimit = _config.HttpServicePointConnectionLimit;
+#endif
 
             _httpClient = httpClient;
         }
@@ -171,6 +173,12 @@ namespace Abot2.Core
                 MaxAutomaticRedirections = _config.HttpRequestMaxAutoRedirects,
                 UseDefaultCredentials = _config.UseDefaultCredentials
             };
+
+#if NET
+            //ServicePointManager has no effect on HttpClient in .NET Core and later
+            if (_config.HttpServicePointConnectionLimit > 0)
+                httpClientHandler.MaxConnectionsPerServer = _config.HttpServicePointConnectionLimit;
+#endif
 
             if (_config.IsHttpRequestAutomaticDecompressionEnabled)
                 httpClientHandler.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate;
