@@ -18,6 +18,8 @@ namespace Abot2.Tests.Integration
 
         }
 
+        public TestContext TestContext { get; set; }
+
         [TestMethod]
         public async Task Crawl_VerifyCrawlResultIsAsExpected()
         {
@@ -88,55 +90,84 @@ namespace Abot2.Tests.Integration
 
             var pagesCrawledCount = 0;
 
-            var crawler = new PoliteWebCrawler(configuration, null, null, null, null, null, null, null, null);
-            crawler.PageCrawlCompleted += (a, b) => Interlocked.Increment(ref pagesCrawledCount);
+            //The site holds every response until the crawl timeout has fired, so the crawl cannot get anywhere before it,
+            //however late the timeout fires, and finishes right after it
+            using (var site = await TestSite.StartHoldingResponsesAsync(TestContext.CancellationToken))
+            {
+                var crawler = new TimeoutNotifyingCrawler(configuration, site.ReleaseResponses);
+                crawler.PageCrawlCompleted += (a, b) => Interlocked.Increment(ref pagesCrawledCount);
 
-            var result = await crawler.CrawlAsync(SetupAssemblyInitializer.SlowSite.BaseUri);
+                var result = await crawler.CrawlAsync(site.BaseUri);
 
-            Assert.IsFalse(result.ErrorOccurred);
-            Assert.IsTrue(result.CrawlContext.IsCrawlHardStopRequested, "The crawl timeout should have stopped the crawl");
-            Assert.IsLessThan(2, pagesCrawledCount, "Crawled more than 2 pages");
+                Assert.IsFalse(result.ErrorOccurred);
+                Assert.IsTrue(result.CrawlContext.IsCrawlHardStopRequested, "The crawl timeout should have stopped the crawl");
+                Assert.IsLessThan(2, pagesCrawledCount, "Crawled more than 2 pages");
+            }
         }
 
         [TestMethod]
         public async Task Crawl_Synchronous_CancellationTokenCancelled_StopsCrawl()
         {
             var cancellationTokenSource = new CancellationTokenSource();
-            var timer = new System.Timers.Timer(800);
-            timer.Elapsed += (o, e) =>
+
+            //A slow server: the first request is held, the crawl is cancelled while waiting for it, then the response arrives
+            using (var site = await TestSite.StartHoldingResponsesAsync(TestContext.CancellationToken))
             {
-                cancellationTokenSource.Cancel();
-                timer.Stop();
-                timer.Dispose();
-            };
-            timer.Start();
+                site.RequestReceived += uri =>
+                {
+                    cancellationTokenSource.Cancel();
+                    site.ReleaseResponses();
+                };
 
-            var crawler = new PoliteWebCrawler();
-            var result = await crawler.CrawlAsync(SetupAssemblyInitializer.SlowSite.BaseUri, cancellationTokenSource);
+                var crawler = new PoliteWebCrawler();
+                var result = await crawler.CrawlAsync(site.BaseUri, cancellationTokenSource);
 
-            Assert.IsTrue(result.ErrorOccurred);
-            Assert.IsTrue(result.ErrorException is OperationCanceledException);
+                Assert.IsTrue(result.ErrorOccurred);
+                Assert.IsTrue(result.ErrorException is OperationCanceledException);
+            }
         }
 
         [TestMethod]
         public void Crawl_Asynchronous_CancellationTokenCancelled_StopsCrawl()
         {
             var cancellationTokenSource = new CancellationTokenSource();
-            var timer = new System.Timers.Timer(800);
-            timer.Elapsed += (o, e) =>
+
+            //A slow server: the first request is held, the crawl is cancelled while waiting for it, then the response arrives
+            using (var site = TestSite.StartHoldingResponsesAsync(TestContext.CancellationToken).Result)
             {
-                cancellationTokenSource.Cancel();
-                timer.Stop();
-                timer.Dispose();
-            };
-            timer.Start();
+                site.RequestReceived += uri =>
+                {
+                    cancellationTokenSource.Cancel();
+                    site.ReleaseResponses();
+                };
 
-            var crawler = new PoliteWebCrawler();
-            var task = Task.Factory.StartNew<CrawlResult>( () => crawler.CrawlAsync(SetupAssemblyInitializer.SlowSite.BaseUri, cancellationTokenSource).Result);
-            var result = task.Result;
+                var crawler = new PoliteWebCrawler();
+                var task = Task.Factory.StartNew<CrawlResult>( () => crawler.CrawlAsync(site.BaseUri, cancellationTokenSource).Result);
+                var result = task.Result;
 
-            Assert.IsTrue(result.ErrorOccurred);
-            Assert.IsTrue(result.ErrorException is OperationCanceledException);
+                Assert.IsTrue(result.ErrorOccurred);
+                Assert.IsTrue(result.ErrorException is OperationCanceledException);
+            }
+        }
+
+        [TestMethod]
+        public async Task Crawl_ServerDoesNotRespondInTime_PageReportsRequestTimeout()
+        {
+            var configuration = new CrawlConfiguration { HttpRequestTimeoutInSeconds = 1 };
+            CrawledPage crawledPage = null;
+
+            //A server that never answers while the crawl runs, so the request can only end by timing out
+            using (var site = await TestSite.StartHoldingResponsesAsync(TestContext.CancellationToken))
+            {
+                var crawler = new PoliteWebCrawler(configuration);
+                crawler.PageCrawlCompleted += (s, e) => crawledPage = e.CrawledPage;
+
+                await crawler.CrawlAsync(site.BaseUri);
+            }
+
+            Assert.IsNotNull(crawledPage);
+            Assert.IsNotNull(crawledPage.HttpRequestException);
+            Assert.StartsWith("Request timeout occurred", crawledPage.HttpRequestException.Message);
         }
 
         [TestMethod]
@@ -176,6 +207,24 @@ namespace Abot2.Tests.Integration
         private protected override List<PageResult> GetExpectedCrawlResult()
         {
             return SetupAssemblyInitializer.Site.GetAllPages();
+        }
+
+        //Calls back once the crawl timeout has hard-stopped the crawl
+        private class TimeoutNotifyingCrawler : PoliteWebCrawler
+        {
+            readonly Action _onCrawlTimeout;
+
+            public TimeoutNotifyingCrawler(CrawlConfiguration crawlConfiguration, Action onCrawlTimeout)
+                : base(crawlConfiguration)
+            {
+                _onCrawlTimeout = onCrawlTimeout;
+            }
+
+            protected override void HandleCrawlTimeout(object sender, System.Timers.ElapsedEventArgs e)
+            {
+                base.HandleCrawlTimeout(sender, e);
+                _onCrawlTimeout();
+            }
         }
     }
 }

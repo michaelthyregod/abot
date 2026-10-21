@@ -14,9 +14,6 @@ namespace Abot2.Tests.Integration
         /// <summary>Test site that responds immediately</summary>
         internal static TestSite Site { get; private set; }
 
-        /// <summary>Test site that delays every response, for tests that need a crawl to still be running at a given time</summary>
-        internal static TestSite SlowSite { get; private set; }
-
         [AssemblyInitialize]
         public static async Task AssemblyInit(TestContext context)
         {
@@ -26,15 +23,13 @@ namespace Abot2.Tests.Integration
                 .WriteTo.Console(outputTemplate: Constants.LogFormatTemplate)
                 .CreateLogger();
 
-            Site = await TestSite.StartAsync(cancellationToken: context.CancellationToken);
-            SlowSite = await TestSite.StartAsync(TimeSpan.FromMilliseconds(1500), context.CancellationToken);
+            Site = await TestSite.StartAsync(context.CancellationToken);
         }
 
         [AssemblyCleanup]
         public static void AssemblyCleanup()
         {
             Site?.Dispose();
-            SlowSite?.Dispose();
         }
     }
 }

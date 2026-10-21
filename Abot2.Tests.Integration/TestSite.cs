@@ -36,14 +36,15 @@ namespace Abot2.Tests.Integration
         static readonly Regex ExternalPageRoute = new Regex(@"^/External/Page(\d+)$", RegexOptions.IgnoreCase);
 
         readonly HttpListener _listener;
-        readonly TimeSpan _responseDelay;
+        readonly bool _holdResponses;
+        readonly TaskCompletionSource<bool> _responsesReleased = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         readonly CancellationTokenSource _stopping = new CancellationTokenSource();
         readonly Task _acceptLoop;
 
-        TestSite(HttpListener listener, int port, TimeSpan responseDelay)
+        TestSite(HttpListener listener, int port, bool holdResponses)
         {
             _listener = listener;
-            _responseDelay = responseDelay;
+            _holdResponses = holdResponses;
             BaseUri = new Uri($"http://127.0.0.1:{port}/");
             ExternalBaseUri = new Uri($"http://localhost:{port}/");
             _acceptLoop = Task.Run(AcceptRequestsAsync);
@@ -55,9 +56,26 @@ namespace Abot2.Tests.Integration
         /// <summary>Same server under the other loopback name, seen by the crawler as an external domain</summary>
         public Uri ExternalBaseUri { get; }
 
-        /// <param name="responseDelay">Delay added before every response, used by tests that need a crawl to take a while</param>
+        /// <summary>Raised when a request arrives, before it is held or answered</summary>
+        public event Action<Uri> RequestReceived;
+
         /// <param name="cancellationToken">Cancels starting the site</param>
-        public static Task<TestSite> StartAsync(TimeSpan responseDelay = default, CancellationToken cancellationToken = default)
+        public static Task<TestSite> StartAsync(CancellationToken cancellationToken = default)
+        {
+            return StartAsync(false, cancellationToken);
+        }
+
+        /// <summary>
+        /// Starts a site that holds every response until <see cref="ReleaseResponses"/> is called, so a test decides exactly when
+        /// requests complete instead of relying on how long they take
+        /// </summary>
+        /// <param name="cancellationToken">Cancels starting the site</param>
+        public static Task<TestSite> StartHoldingResponsesAsync(CancellationToken cancellationToken = default)
+        {
+            return StartAsync(true, cancellationToken);
+        }
+
+        static Task<TestSite> StartAsync(bool holdResponses, CancellationToken cancellationToken)
         {
             const int maxAttempts = 10;
 
@@ -73,7 +91,7 @@ namespace Abot2.Tests.Integration
                 try
                 {
                     listener.Start();
-                    return Task.FromResult(new TestSite(listener, port, responseDelay));
+                    return Task.FromResult(new TestSite(listener, port, holdResponses));
                 }
                 catch (HttpListenerException) when (attempt < maxAttempts)
                 {
@@ -103,8 +121,17 @@ namespace Abot2.Tests.Integration
             return pages;
         }
 
+        /// <summary>
+        /// Lets held responses complete, on a site started with <see cref="StartHoldingResponsesAsync"/>
+        /// </summary>
+        public void ReleaseResponses()
+        {
+            _responsesReleased.TrySetResult(true);
+        }
+
         public void Dispose()
         {
+            ReleaseResponses();
             _stopping.Cancel();
             _listener.Close();//makes the pending GetContextAsync() throw, which ends the accept loop
 
@@ -142,8 +169,10 @@ namespace Abot2.Tests.Integration
         {
             try
             {
-                if (_responseDelay > TimeSpan.Zero)
-                    await Task.Delay(_responseDelay, _stopping.Token).ConfigureAwait(false);
+                RequestReceived?.Invoke(context.Request.Url);
+
+                if (_holdResponses)
+                    await _responsesReleased.Task.ConfigureAwait(false);
 
                 Route(context.Request.Url, out var status, out var html);
 
