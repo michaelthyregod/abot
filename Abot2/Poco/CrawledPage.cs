@@ -12,7 +12,8 @@ namespace Abot2.Poco
     {
         /// <summary>
         /// Max node nesting depth kept in AngleSharpHtmlDocument, the same limit Chrome's html parser uses. Overly deep paths are flattened
-        /// into siblings (keeping document order) so recursive AngleSharp members like TextContent and ToHtml() can't overflow the stack.
+        /// into siblings (keeping document order) so AngleSharp members that recurse once per level, such as TextContent, GetElementsByTagName,
+        /// Clone and Normalize, can't overflow the stack.
         /// </summary>
         public const int MaxHtmlDocumentDepth = 512;
 

@@ -316,7 +316,7 @@ if (result.ErrorOccurred)
 
 ### 5.5 Very deeply nested HTML is flattened in `AngleSharpHtmlDocument`
 
-AngleSharp 1.x processes the document tree recursively, so a malformed or hostile page with thousands of unclosed tags could cause a `StackOverflowException`, which .NET cannot catch and which kills the process. `CrawledPage.AngleSharpHtmlDocument` now caps nesting at `CrawledPage.MaxHtmlDocumentDepth` (512 levels, the same limit Chrome uses). Deeper elements are moved up into siblings in document order, so no text, elements or links are lost. Pages within the limit are not changed. `CrawledPage.Content.Text` always contains the original HTML.
+Several AngleSharp 1.x members walk the document tree recursively, one call per nesting level, among them `TextContent`, `GetElementsByTagName`, `Clone` and `Normalize`. A malformed or hostile page with thousands of unclosed tags could make them throw a `StackOverflowException`, which .NET cannot catch and which kills the process. `CrawledPage.AngleSharpHtmlDocument` now caps nesting at `CrawledPage.MaxHtmlDocumentDepth` (512 levels, the same limit Chrome uses). Deeper elements are moved up into siblings in document order, so no text, elements or links are lost. Pages within the limit are not changed. `CrawledPage.Content.Text` always contains the original HTML.
 
 ### 5.6 `DomainRateLimiter` is disposable and shares limits correctly
 
