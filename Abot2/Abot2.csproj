@@ -11,7 +11,7 @@
     <Description>Abot is an open source C# web crawler built for speed and flexibility. It takes care of the low level plumbing (multithreading, http requests, scheduling, link parsing, etc..). You just register for events to process the page data. You can also plugin your own implementations of core interfaces to take complete control over the crawl process.</Description>
     <Copyright>Copyright 2012 SHARPDEV LLC</Copyright>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-    <PackageIconUrl>http://abotx.org/Content/images/logoicon.png</PackageIconUrl>
+    <PackageIcon>icon.png</PackageIcon>
     <RepositoryUrl>https://github.com/sjdirect/abot</RepositoryUrl>
     <PackageTags>crawler robot spider .net dotnet</PackageTags>
     <PackageProjectUrl>https://github.com/sjdirect/abot</PackageProjectUrl>
@@ -19,6 +19,10 @@
     <AssemblyVersion>2.0.0.0</AssemblyVersion>
     <FileVersion>2.0.0.0</FileVersion>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="icon.png" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
   <ItemGroup>
     <Compile Remove="Poco\HttpRequest.cs" />
