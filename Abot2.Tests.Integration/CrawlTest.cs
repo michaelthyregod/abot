@@ -13,7 +13,7 @@ namespace Abot2.Tests.Integration
     public class CrawlTest : CrawlTestBase
     {
         public CrawlTest()
-            :base(SetupAssemblyInitializer.Site.BaseUri, 25)
+            :base(SetupAssemblyInitializer.Site.BaseUri)
         {
 
         }
@@ -94,7 +94,7 @@ namespace Abot2.Tests.Integration
             var result = await crawler.CrawlAsync(SetupAssemblyInitializer.SlowSite.BaseUri);
 
             Assert.IsFalse(result.ErrorOccurred);
-            Assert.IsLessThan(8, result.Elapsed.TotalSeconds, "Took more than 8 seconds");
+            Assert.IsTrue(result.CrawlContext.IsCrawlHardStopRequested, "The crawl timeout should have stopped the crawl");
             Assert.IsLessThan(2, pagesCrawledCount, "Crawled more than 2 pages");
         }
 

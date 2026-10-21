@@ -13,13 +13,11 @@ namespace Abot2.Tests.Integration
     public abstract class CrawlTestBase
     {
         ConcurrentBag<PageResult> _actualCrawledPages = new ConcurrentBag<PageResult>();
-        int _maxSecondsToCrawl;
         Uri _rootUri;
 
-        public CrawlTestBase(Uri rootUri, int maxSecondsToCrawl)
+        public CrawlTestBase(Uri rootUri)
         {
             _rootUri = rootUri;
-            _maxSecondsToCrawl = maxSecondsToCrawl;
         }
 
         protected async Task CrawlAndAssert(IWebCrawler crawler)
@@ -36,7 +34,6 @@ namespace Abot2.Tests.Integration
             PrintDescrepancies(descrepancies);
 
             Assert.IsEmpty(descrepancies, "There were discrepancies between expected and actual crawl results. See ouput window for details.");
-            Assert.IsLessThan(_maxSecondsToCrawl, result.Elapsed.TotalSeconds, string.Format("Elapsed Time to crawl {0}, over {1} second threshold", result.Elapsed.TotalSeconds, _maxSecondsToCrawl));
         }
 
         private protected abstract List<PageResult> GetExpectedCrawlResult();

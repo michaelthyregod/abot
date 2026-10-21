@@ -59,16 +59,28 @@ namespace Abot2.Tests.Integration
         /// <param name="cancellationToken">Cancels starting the site</param>
         public static Task<TestSite> StartAsync(TimeSpan responseDelay = default, CancellationToken cancellationToken = default)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            const int maxAttempts = 10;
 
-            var port = GetFreeTcpPort();
+            for (var attempt = 1; ; attempt++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
 
-            var listener = new HttpListener();
-            listener.Prefixes.Add($"http://127.0.0.1:{port}/");
-            listener.Prefixes.Add($"http://localhost:{port}/");
-            listener.Start();
+                var port = GetFreeTcpPort();
 
-            return Task.FromResult(new TestSite(listener, port, responseDelay));
+                var listener = new HttpListener();
+                listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+                listener.Prefixes.Add($"http://localhost:{port}/");
+                try
+                {
+                    listener.Start();
+                    return Task.FromResult(new TestSite(listener, port, responseDelay));
+                }
+                catch (HttpListenerException) when (attempt < maxAttempts)
+                {
+                    //Another process took the port between GetFreeTcpPort() releasing it and the listener binding it, try another one
+                    listener.Close();
+                }
+            }
         }
 
         /// <summary>Every page a full crawl with external page crawling enabled should find, with its http status</summary>
