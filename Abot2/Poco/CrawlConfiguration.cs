@@ -136,7 +136,7 @@ namespace Abot2.Poco
         /// Uses closest multiple of 16 to the value set. If there is not at least this much memory available before starting a crawl, throws InsufficientMemoryException.
         /// If zero, this setting has no effect.
         /// </summary>
-        /// <exception cref="http://msdn.microsoft.com/en-us/library/system.insufficientmemoryexception.aspx">InsufficientMemoryException</exception>
+        /// <exception cref="System.InsufficientMemoryException"/>
         public int MinAvailableMemoryRequiredInMb { get; set; }
 
         /// <summary>
