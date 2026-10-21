@@ -327,6 +327,9 @@ These need no action, but may change what you observe:
 - `PoliteWebCrawler` disposes the rate limiter and the robots.txt `PageRequester` it creates.
 - `WebCrawler` disposes the crawl timeout timer, and `TaskThreadManager` disposes the cancellation token source it creates.
 - A `RateLimiter` timer callback that runs after `Dispose` no longer crashes the process.
+- `RateLimiter` times waits with `Stopwatch`. On .NET Framework, 2.x used `Environment.TickCount`, which only advances every ~15 ms, so waits could end up to ~15 ms early.
+- `CompactCrawledUrlRepository`, the default crawled-URL store, now identifies URLs by a 64-bit hash that is the same in every process. 2.x used `Uri.GetHashCode()`: only 32 bits, so different URLs could share a hash (about 100 pairs per million URLs) and the second page was skipped as already crawled. On .NET Core and later that hash is also seeded randomly per process, so which page was skipped changed from run to run. Which URLs count as duplicates is unchanged.
+- `BloomFilter<string>` (used by `BloomFilterCrawledUrlRepository`) no longer uses `string.GetHashCode()`, so its results are the same on every run.
 
 ## 6. Package changes
 

@@ -54,20 +54,21 @@ namespace Abot2.Tests.Unit.Core
             Assert.IsFalse(_unitUnderTest.Contains(_uri2));
         }
 
+        //Every implementation guarantees this. Whether AddIfNew reports each unique uri as new is only guaranteed by
+        //exact implementations: hash-based ones can, by design, see two different uris as the same.
         [TestMethod]
         public void NoFalseNegativesTest()
         {
             // create input collection
-            var inputs = GenerateRandomDataList(10000);
+            var inputs = GenerateUriList(10000);
 
             // instantiate filter and populate it with the inputs
             using (var uut = GetInstance())
             {
-                //If all were unique then they should all return "true" for Contains()
                 foreach (var input in inputs)
-                    Assert.IsTrue(uut.AddIfNew(input));
+                    uut.AddIfNew(input);
 
-                //If all were added successfully then they should all return "true" for Contains()
+                //Everything that was added must be reported by Contains()
                 foreach (var input in inputs)
                 {
                     if (!uut.Contains(input))
@@ -76,12 +77,13 @@ namespace Abot2.Tests.Unit.Core
             }
         }
 
-        private List<Uri> GenerateRandomDataList(int capacity)
+        //The same uris on every run, so results are reproducible
+        protected static List<Uri> GenerateUriList(int capacity)
         {
             var uris = new List<Uri>(capacity);
             for (var i = 0; i < capacity; i++)
             {
-                uris.Add(new Uri("http://" + Guid.NewGuid().ToString()));
+                uris.Add(new Uri($"http://site{i}.com/page{i}"));
             }
             return uris;
         }
