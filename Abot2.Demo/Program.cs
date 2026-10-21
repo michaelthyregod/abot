@@ -22,17 +22,38 @@ namespace Abot2.Demo
 
             Log.Information("Demo starting up!");
 
-            //The uri each demo crawls is set in appsettings.json
+            //Which demos run, and the uri each one uses, are set in appsettings.json
             var settings = new ConfigurationBuilder()
                 .SetBasePath(AppContext.BaseDirectory)
                 .AddJsonFile("appsettings.json", optional: false)
                 .Build();
 
-            //await DemoPageRequester(GetDemoUri(settings, "PageRequester"));
-            await DemoSimpleCrawler(GetDemoUri(settings, "SimpleCrawler"));
+            var ranAny = false;
+            if (IsDemoEnabled(settings, "PageRequester"))
+            {
+                await DemoPageRequester(GetDemoUri(settings, "PageRequester"));
+                ranAny = true;
+            }
+            if (IsDemoEnabled(settings, "SimpleCrawler"))
+            {
+                await DemoSimpleCrawler(GetDemoUri(settings, "SimpleCrawler"));
+                ranAny = true;
+            }
+            if (!ranAny)
+                Log.Warning("No demo is enabled: set Demos:<name>:Enabled to true in appsettings.json");
 
             Log.Information("Demo done!");
             Console.ReadKey();
+        }
+
+        private static bool IsDemoEnabled(IConfiguration settings, string demo)
+        {
+            var key = $"Demos:{demo}:Enabled";
+            var value = settings[key];
+            if (!bool.TryParse(value, out var enabled))
+                throw new InvalidOperationException($"Set {key} in appsettings.json to true or false; it is [{value}].");
+
+            return enabled;
         }
 
         private static Uri GetDemoUri(IConfiguration settings, string demo)
