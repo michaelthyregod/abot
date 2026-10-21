@@ -18,6 +18,11 @@ namespace Abot2.Tests.Integration
 
         }
 
+        //The tests that do not test request timeouts leave HttpClient's own default (100 s) instead of the crawler's 15 s,
+        //so a slow first request on a busy machine (cold start, mostly on .NET Framework) cannot fail them.
+        //Hangs are caught by the test timeout in testconfig.json.
+        const int NoCrawlerRequestTimeout = 0;
+
         public TestContext TestContext { get; set; }
 
         [TestMethod]
@@ -25,7 +30,8 @@ namespace Abot2.Tests.Integration
         {
             var config = new CrawlConfiguration()
             {
-                IsExternalPageCrawlingEnabled = true
+                IsExternalPageCrawlingEnabled = true,
+                HttpRequestTimeoutInSeconds = NoCrawlerRequestTimeout
             };
             await base.CrawlAndAssert(new PoliteWebCrawler(config), TestContext.CancellationToken);
         }
@@ -36,7 +42,8 @@ namespace Abot2.Tests.Integration
             var configuration = new CrawlConfiguration
             {
                 IsExternalPageCrawlingEnabled = true,
-                MaxPagesToCrawl = 5
+                MaxPagesToCrawl = 5,
+                HttpRequestTimeoutInSeconds = NoCrawlerRequestTimeout
             };
 
             var pagesCrawledCount = 0;
@@ -54,6 +61,7 @@ namespace Abot2.Tests.Integration
         {
             var configuration = new CrawlConfiguration();
             configuration.MaxPagesToCrawl = 25;
+            configuration.HttpRequestTimeoutInSeconds = NoCrawlerRequestTimeout;
 
             var pagesCrawledCount = 0;
 
@@ -71,6 +79,7 @@ namespace Abot2.Tests.Integration
             var configuration = new CrawlConfiguration();
             configuration.MinCrawlDelayPerDomainMilliSeconds = 1000; //adding delay since it increases the chance of issues with abot crawling more than MaxPagesToCrawl.
             configuration.MaxPagesToCrawl = 5;
+            configuration.HttpRequestTimeoutInSeconds = NoCrawlerRequestTimeout;
 
             var pagesCrawledCount = 0;
 
@@ -87,6 +96,7 @@ namespace Abot2.Tests.Integration
         {
             var configuration = new CrawlConfiguration();
             configuration.CrawlTimeoutSeconds = 2;
+            configuration.HttpRequestTimeoutInSeconds = NoCrawlerRequestTimeout;
 
             var pagesCrawledCount = 0;
 
@@ -176,6 +186,7 @@ namespace Abot2.Tests.Integration
             var configuration = new CrawlConfiguration();
             configuration.MaxPagesToCrawl = 3;
             configuration.MinCrawlDelayPerDomainMilliSeconds = 1000; // 1 second * 2 pages = 2 (or more) seconds
+            configuration.HttpRequestTimeoutInSeconds = NoCrawlerRequestTimeout;
 
             var pagesCrawledCount = 0;
 
@@ -199,7 +210,8 @@ namespace Abot2.Tests.Integration
             {
                 MaxRetryCount = 3,
                 MinRetryDelayInMilliseconds = 2000,
-                IsExternalPageCrawlingEnabled = true
+                IsExternalPageCrawlingEnabled = true,
+                HttpRequestTimeoutInSeconds = NoCrawlerRequestTimeout
             };
 
             await base.CrawlAndAssert(new PoliteWebCrawler(configuration), TestContext.CancellationToken);
