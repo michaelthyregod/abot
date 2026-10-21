@@ -170,9 +170,10 @@ namespace Abot2.Core
                 throw new ObjectDisposedException(GetType().FullName);
         }
 
+        //Local, like DateTime.Now; GetLocalNow().DateTime alone would be Unspecified
         private DateTime Now()
         {
-            return _timeProvider.GetLocalNow().DateTime;
+            return DateTime.SpecifyKind(_timeProvider.GetLocalNow().DateTime, DateTimeKind.Local);
         }
 
         //Built on the first request, lock-free: if several first requests race, one client is published and the others are disposed

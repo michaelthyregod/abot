@@ -93,6 +93,27 @@ namespace Abot2.Tests.Unit.Core
             Assert.IsTrue(result.RequestCompleted <= result.DownloadContentCompleted);
         }
 
+        //The timestamps are local times, as DateTime.Now gave in 2.x, so for example serializers keep writing their offset
+        [TestMethod]
+        public async Task MakeRequestAsync_Timestamps_AreLocalTimesFromTheClock()
+        {
+            var time = new ManualTimeProvider();
+            var expected = time.GetLocalNow().DateTime;
+            var dummyHttpResponseMessage = new HttpResponseMessage(HttpStatusCode.OK) { RequestMessage = new HttpRequestMessage() };
+            _fakeHttpClient.Setup(f => f.SendAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>())).ReturnsAsync(dummyHttpResponseMessage);
+            _fakeWebContentExtractor.Setup(f => f.GetContentAsync(dummyHttpResponseMessage, It.IsAny<CancellationToken>())).ReturnsAsync(new PageContent());
+            using (var unitUnderTest = new PageRequester(_crawlConfig, _fakeWebContentExtractor.Object, _fakeHttpClient.Object, time))
+            {
+                var result = await unitUnderTest.MakeRequestAsync(_validUri, TestContext.CancellationToken);
+
+                foreach (var timestamp in new[] { result.RequestStarted, result.RequestCompleted, result.DownloadContentStarted.Value, result.DownloadContentCompleted.Value })
+                {
+                    Assert.AreEqual(DateTimeKind.Local, timestamp.Kind);
+                    Assert.AreEqual(expected, timestamp);
+                }
+            }
+        }
+
         [TestMethod]
         public async Task MakeRequestAsync_HttpRequestResponseThrowsHttpRequestException_ReturnsExpectedCrawledPageObject()
         {
