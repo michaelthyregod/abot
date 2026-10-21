@@ -15,34 +15,40 @@ namespace Abot2.Core
 
     public class FifoPagesToCrawlRepository : IPagesToCrawlRepository
     {
-        internal ConcurrentQueue<PageToCrawl> UrlQueue = new ConcurrentQueue<PageToCrawl>();
+        private ConcurrentQueue<PageToCrawl> _urlQueue = new ConcurrentQueue<PageToCrawl>();
 
         public void Add(PageToCrawl page)
         {
-            UrlQueue.Enqueue(page);
+            GetQueue().Enqueue(page);
         }
 
         public PageToCrawl GetNext()
         {
             PageToCrawl pageToCrawl;
-            UrlQueue.TryDequeue(out pageToCrawl);
+            GetQueue().TryDequeue(out pageToCrawl);
 
             return pageToCrawl;
         }
 
         public void Clear()
         {
-            UrlQueue = new ConcurrentQueue<PageToCrawl>();
+            GetQueue();
+            _urlQueue = new ConcurrentQueue<PageToCrawl>();
         }
 
         public int Count()
         {
-            return UrlQueue.Count;
+            return GetQueue().Count;
         }
 
         public virtual void Dispose()
         {
-            UrlQueue = null;
+            _urlQueue = null;
+        }
+
+        private ConcurrentQueue<PageToCrawl> GetQueue()
+        {
+            return _urlQueue ?? throw new ObjectDisposedException(GetType().FullName);
         }
     }
 
