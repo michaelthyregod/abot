@@ -5,7 +5,9 @@ using System.Diagnostics;
 
 namespace Abot2.Tests.Unit.Core
 {
+    //Asserts upper time limits that other tests running at the same time could push it over
     [TestClass]
+    [DoNotParallelize]
     public class DomainRateLimiterTest
     {
         [TestMethod]

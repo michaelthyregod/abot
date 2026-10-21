@@ -5,7 +5,9 @@ using System;
 
 namespace Abot2.Tests.Unit.Util
 {
+    //Counts timer ticks within a fixed time window, which other tests running at the same time could delay
     [TestClass]
+    [DoNotParallelize]
     public class CachedMemoryMonitorTest
     {
         CachedMemoryMonitor _uut;

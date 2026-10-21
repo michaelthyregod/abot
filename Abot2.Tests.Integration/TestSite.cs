@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -51,7 +52,8 @@ namespace Abot2.Tests.Integration
         public Uri ExternalBaseUri { get; }
 
         /// <param name="responseDelay">Delay added before every response, used by tests that need a crawl to take a while</param>
-        public static async Task<TestSite> StartAsync(TimeSpan responseDelay = default)
+        /// <param name="cancellationToken">Cancels starting the site</param>
+        public static async Task<TestSite> StartAsync(TimeSpan responseDelay = default, CancellationToken cancellationToken = default)
         {
             var port = GetFreeTcpPort();
 
@@ -64,7 +66,7 @@ namespace Abot2.Tests.Integration
             var site = new TestSite(app, port, responseDelay);
             site.MapRoutes();
 
-            await app.StartAsync();
+            await app.StartAsync(cancellationToken);
             return site;
         }
 

@@ -3,6 +3,9 @@ using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Serilog;
 
+//Each test method runs in parallel with the others; timing-sensitive classes opt out with [DoNotParallelize]
+[assembly: Parallelize(Scope = ExecutionScope.MethodLevel)]
+
 namespace Abot2.Tests.Integration
 {
     [TestClass]
@@ -23,8 +26,8 @@ namespace Abot2.Tests.Integration
                 .WriteTo.Console(outputTemplate: Constants.LogFormatTemplate)
                 .CreateLogger();
 
-            Site = await TestSite.StartAsync();
-            SlowSite = await TestSite.StartAsync(TimeSpan.FromMilliseconds(1500));
+            Site = await TestSite.StartAsync(cancellationToken: context.CancellationToken);
+            SlowSite = await TestSite.StartAsync(TimeSpan.FromMilliseconds(1500), context.CancellationToken);
         }
 
         [AssemblyCleanup]

@@ -5,7 +5,9 @@ using System.Collections.Generic;
 
 namespace Abot2.Tests.Unit.Util
 {
+    //Measures process-wide memory, which other tests running at the same time change
     [TestClass]
+    [DoNotParallelize]
     public class GcMemoryMonitorTest
     {
         GcMemoryMonitor _uut;

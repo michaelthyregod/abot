@@ -965,6 +965,8 @@ namespace Abot2.Tests.Unit.Crawler
         }
 
         [TestMethod]
+        //Retry-After is only about a second ahead, so a delay from other tests running at the same time can make it already passed
+        [DoNotParallelize]
         public async Task Crawl_CanExtractRetryAfterDateFromHeaders()
         {
             _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyThreadManager, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);

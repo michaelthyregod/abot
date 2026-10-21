@@ -4,7 +4,9 @@ using System.Threading;
 
 namespace Abot2.Tests.Unit.Util
 {
+    //Expects background work to finish within fixed sleeps, which other tests running at the same time could delay
     [TestClass]
+    [DoNotParallelize]
     public class ManualThreadManagerTest : ThreadManagerTest
     {
         protected override IThreadManager GetInstance(int maxThreads)
