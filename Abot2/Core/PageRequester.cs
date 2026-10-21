@@ -14,12 +14,17 @@ namespace Abot2.Core
         /// <summary>
         /// Make an http web request to the url and download its content
         /// </summary>
-        Task<CrawledPage> MakeRequestAsync(Uri uri);
+        /// <param name="uri">The url to request</param>
+        /// <param name="cancellationToken">Cancels the request; the returned task is then cancelled instead of reporting an error on the page</param>
+        Task<CrawledPage> MakeRequestAsync(Uri uri, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Make an http web request to the url and download its content based on the param func decision
         /// </summary>
-        Task<CrawledPage> MakeRequestAsync(Uri uri, Func<CrawledPage, CrawlDecision> shouldDownloadContent);
+        /// <param name="uri">The url to request</param>
+        /// <param name="shouldDownloadContent">Decides, once the response headers have arrived, whether to download the content</param>
+        /// <param name="cancellationToken">Cancels the request; the returned task is then cancelled instead of reporting an error on the page</param>
+        Task<CrawledPage> MakeRequestAsync(Uri uri, Func<CrawledPage, CrawlDecision> shouldDownloadContent, CancellationToken cancellationToken = default);
     }
 
     public class PageRequester : IPageRequester
@@ -27,16 +32,16 @@ namespace Abot2.Core
         private readonly CrawlConfiguration _config;
         private readonly IWebContentExtractor _contentExtractor;
         private readonly CookieContainer _cookieContainer = new CookieContainer();
-        private readonly object _httpClientLock = new object();
         private readonly bool _ownsHttpClient;
-        private HttpClientHandler _httpClientHandler;
-        private volatile HttpClient _httpClient;
+        private readonly TimeProvider _timeProvider;
+        private HttpClients _httpClients;
         private int _isDisposed;
 
         /// <param name="config">Configurable crawl values</param>
         /// <param name="contentExtractor">Extracts the content of a response. Owned by the caller, who must dispose it.</param>
         /// <param name="httpClient">Owned by the caller, who must dispose it; if null, an internal one is created on the first request and disposed with this instance.</param>
-        public PageRequester(CrawlConfiguration config, IWebContentExtractor contentExtractor, HttpClient httpClient = null)
+        /// <param name="timeProvider">Clock for the request and download times on the crawled pages; if null, the system clock (TimeProvider.System)</param>
+        public PageRequester(CrawlConfiguration config, IWebContentExtractor contentExtractor, HttpClient httpClient = null, TimeProvider timeProvider = null)
         {
             _config = config ?? throw new ArgumentNullException(nameof(config));
 
@@ -48,54 +53,51 @@ namespace Abot2.Core
 #endif
 
             _ownsHttpClient = httpClient == null;
-            _httpClient = httpClient;
+            if (httpClient != null)
+                _httpClients = new HttpClients(null, httpClient);
+            _timeProvider = timeProvider ?? TimeProvider.System;
         }
 
         /// <summary>
         /// Make an http web request to the url and download its content
         /// </summary>
-        public virtual async Task<CrawledPage> MakeRequestAsync(Uri uri)
+        public virtual Task<CrawledPage> MakeRequestAsync(Uri uri, CancellationToken cancellationToken = default)
         {
-            return await MakeRequestAsync(uri, (x) => new CrawlDecision { Allow = true }).ConfigureAwait(false);
+            return MakeRequestAsync(uri, (x) => new CrawlDecision { Allow = true }, cancellationToken);
         }
 
         /// <summary>
         /// Make an http web request to the url and download its content based on the param func decision
         /// </summary>
-        public virtual async Task<CrawledPage> MakeRequestAsync(Uri uri, Func<CrawledPage, CrawlDecision> shouldDownloadContent)
+        public virtual async Task<CrawledPage> MakeRequestAsync(Uri uri, Func<CrawledPage, CrawlDecision> shouldDownloadContent, CancellationToken cancellationToken = default)
         {
             if (uri == null)
                 throw new ArgumentNullException(nameof(uri));
 
             ThrowIfDisposed();
+            cancellationToken.ThrowIfCancellationRequested();
 
-            //Locked so concurrent first requests share one client instead of each building (and leaking) their own
-            if (_httpClient == null)
-            {
-                lock (_httpClientLock)
-                {
-                    ThrowIfDisposed();
-                    if (_httpClient == null)
-                    {
-                        _httpClientHandler = BuildHttpClientHandler(uri);
-                        _httpClient = BuildHttpClient(_httpClientHandler);
-                    }
-                }
-            }
+            var httpClients = GetHttpClients(uri);
 
             var crawledPage = new CrawledPage(uri);
             HttpResponseMessage response = null;
             try
             {
-                crawledPage.RequestStarted = DateTime.Now;
+                crawledPage.RequestStarted = Now();
                 using (var requestMessage = BuildHttpRequestMessage(uri))
                 {
-                    response = await _httpClient.SendAsync(requestMessage, CancellationToken.None).ConfigureAwait(false);
+                    response = await httpClients.Client.SendAsync(requestMessage, cancellationToken).ConfigureAwait(false);
                 }
 
                 var statusCode = Convert.ToInt32(response.StatusCode);
                 if (statusCode < 200 || statusCode > 399)
                     throw new HttpRequestException($"Server response was unsuccessful, returned [http {statusCode}]");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                //Cancelled by the caller, which is not an error of this page
+                response?.Dispose();
+                throw;
             }
             catch (HttpRequestException hre)
             {
@@ -112,34 +114,36 @@ namespace Abot2.Core
                 crawledPage.HttpRequestException = new HttpRequestException("Unknown error occurred", e);
                 Log.Debug("Error occurred requesting url [{0}] {@Exception}", uri.AbsoluteUri, crawledPage.HttpRequestException);
             }
-            finally
-            {
-                crawledPage.HttpRequestMessage = response?.RequestMessage;
-                crawledPage.RequestCompleted = DateTime.Now;
-                crawledPage.HttpResponseMessage = response;
-                crawledPage.HttpClientHandler = _httpClientHandler;
 
-                try
+            crawledPage.HttpRequestMessage = response?.RequestMessage;
+            crawledPage.RequestCompleted = Now();
+            crawledPage.HttpResponseMessage = response;
+            crawledPage.HttpClientHandler = httpClients.Handler;
+
+            try
+            {
+                if (response != null)
                 {
-                    if (response != null)
-                    {        
-                        var shouldDownloadContentDecision = shouldDownloadContent(crawledPage);
-                        if (shouldDownloadContentDecision.Allow)
-                        {
-                            crawledPage.DownloadContentStarted = DateTime.Now;
-                            crawledPage.Content = await _contentExtractor.GetContentAsync(response).ConfigureAwait(false);
-                            crawledPage.DownloadContentCompleted = DateTime.Now;
-                        }
-                        else
-                        {
-                            Log.Debug("Links on page [{0}] not crawled, [{1}]", crawledPage.Uri.AbsoluteUri, shouldDownloadContentDecision.Reason);
-                        }
+                    var shouldDownloadContentDecision = shouldDownloadContent(crawledPage);
+                    if (shouldDownloadContentDecision.Allow)
+                    {
+                        crawledPage.DownloadContentStarted = Now();
+                        crawledPage.Content = await _contentExtractor.GetContentAsync(response, cancellationToken).ConfigureAwait(false);
+                        crawledPage.DownloadContentCompleted = Now();
+                    }
+                    else
+                    {
+                        Log.Debug("Links on page [{0}] not crawled, [{1}]", crawledPage.Uri.AbsoluteUri, shouldDownloadContentDecision.Reason);
                     }
                 }
-                catch (Exception e)
-                {
-                    Log.Debug("Error occurred finalizing requesting url [{0}] {@Exception}", uri.AbsoluteUri, e);
-                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception e)
+            {
+                Log.Debug("Error occurred finalizing requesting url [{0}] {@Exception}", uri.AbsoluteUri, e);
             }
 
             return crawledPage;
@@ -157,20 +161,68 @@ namespace Abot2.Core
                 return;
 
             if (disposing)
-            {
-                lock (_httpClientLock)
-                {
-                    if (_ownsHttpClient)
-                        _httpClient?.Dispose();
-                    _httpClientHandler?.Dispose();//only ever built here, never passed in
-                }
-            }
+                DisposeHttpClients(Interlocked.Exchange(ref _httpClients, null));
         }
 
         protected void ThrowIfDisposed()
         {
             if (Volatile.Read(ref _isDisposed) != 0)
                 throw new ObjectDisposedException(GetType().FullName);
+        }
+
+        private DateTime Now()
+        {
+            return _timeProvider.GetLocalNow().DateTime;
+        }
+
+        //Built on the first request, lock-free: if several first requests race, one client is published and the others are disposed
+        private HttpClients GetHttpClients(Uri rootUri)
+        {
+            var httpClients = Volatile.Read(ref _httpClients);
+            if (httpClients != null)
+                return httpClients;
+
+            var handler = BuildHttpClientHandler(rootUri);
+            var built = new HttpClients(handler, BuildHttpClient(handler));
+
+            var published = Interlocked.CompareExchange(ref _httpClients, built, null);
+            if (published != null)
+            {
+                DisposeHttpClients(built);
+                return published;
+            }
+
+            //Disposed while building: Dispose() may already have taken the field, so release what was just published
+            if (Volatile.Read(ref _isDisposed) != 0)
+            {
+                DisposeHttpClients(Interlocked.Exchange(ref _httpClients, null));
+                throw new ObjectDisposedException(GetType().FullName);
+            }
+
+            return built;
+        }
+
+        private void DisposeHttpClients(HttpClients httpClients)
+        {
+            if (httpClients == null)
+                return;
+
+            if (_ownsHttpClient)
+                httpClients.Client.Dispose();
+            httpClients.Handler?.Dispose();//only ever built here, never passed in
+        }
+
+        private sealed class HttpClients
+        {
+            public HttpClients(HttpClientHandler handler, HttpClient client)
+            {
+                Handler = handler;
+                Client = client;
+            }
+
+            public HttpClientHandler Handler { get; }
+
+            public HttpClient Client { get; }
         }
         
         

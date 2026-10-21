@@ -1,4 +1,5 @@
-﻿using Abot2.Core;
+﻿using System.Threading;
+using Abot2.Core;
 using Abot2.Crawler;
 using Abot2.Poco;
 using Abot2.Util;
@@ -72,7 +73,7 @@ namespace Abot2.Tests.Unit.Crawler
                 }
             };
             
-            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(_rootUri, It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(homePage));
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(_rootUri, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(homePage));
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPageLinks(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
 
@@ -105,9 +106,9 @@ namespace Abot2.Tests.Unit.Crawler
                 new HyperLink(){HrefValue = uri2}
             };
 
-            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(_rootUri, It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(homePage));
-            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(uri1, It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(page1));
-            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(uri2, It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(page2));
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(_rootUri, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(homePage));
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(uri1, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(page1));
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(uri2, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(page2));
             _fakeHtmlParser.Setup(f => f.GetLinks(It.Is<CrawledPage>(p => p.Uri == homePage.Uri))).Returns(links);
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPageLinks(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
@@ -143,9 +144,9 @@ namespace Abot2.Tests.Unit.Crawler
                 new HyperLink(){HrefValue = uri2}
             };
 
-            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(_rootUri, It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(homePage));
-            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(uri1, It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(page1));
-            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(uri2, It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(page2));
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(_rootUri, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(homePage));
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(uri1, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(page1));
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(uri2, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(page2));
             _fakeHtmlParser.Setup(f => f.GetLinks(It.Is<CrawledPage>(p => p.Uri == homePage.Uri))).Returns(links);
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPageLinks(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
@@ -153,7 +154,7 @@ namespace Abot2.Tests.Unit.Crawler
             
             _fakeRobotsDotText.Setup(f => f.GetCrawlDelay(It.IsAny<string>())).Returns(0);
             _fakeRobotsDotText.Setup(f => f.IsUrlAllowed(It.IsAny<string>(), It.IsAny<string>())).Returns(true);
-            _fakeRobotsDotTextFinder.Setup(f => f.FindAsync(It.IsAny<Uri>())).Returns(Task.FromResult(_fakeRobotsDotText.Object));
+            _fakeRobotsDotTextFinder.Setup(f => f.FindAsync(It.IsAny<Uri>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(_fakeRobotsDotText.Object));
 
             _dummyConfiguration.IsRespectRobotsDotTextEnabled = true;
             _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyThreadManager, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
@@ -190,9 +191,9 @@ namespace Abot2.Tests.Unit.Crawler
                 new HyperLink(){HrefValue = uri2}
             };
 
-            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(_rootUri, It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(homePage));
-            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(uri1, It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(page1));
-            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(uri2, It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(page2));
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(_rootUri, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(homePage));
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(uri1, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(page1));
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(uri2, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(page2));
             _fakeHtmlParser.Setup(f => f.GetLinks(It.Is<CrawledPage>(p => p.Uri == homePage.Uri))).Returns(links);
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPageLinks(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
@@ -200,7 +201,7 @@ namespace Abot2.Tests.Unit.Crawler
             
             _fakeRobotsDotText.Setup(f => f.GetCrawlDelay(It.IsAny<string>())).Returns(3);
             _fakeRobotsDotText.Setup(f => f.IsUrlAllowed(It.IsAny<string>(), It.IsAny<string>())).Returns(true);
-            _fakeRobotsDotTextFinder.Setup(f => f.FindAsync(It.IsAny<Uri>())).Returns(Task.FromResult(_fakeRobotsDotText.Object));
+            _fakeRobotsDotTextFinder.Setup(f => f.FindAsync(It.IsAny<Uri>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(_fakeRobotsDotText.Object));
 
             _dummyConfiguration.IsRespectRobotsDotTextEnabled = true;//BY HAVING A THIS EQUAL TO TRUE WE EXPECT THE IDOMAINRATELIMITER TO BE CALLED
             _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyThreadManager, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
@@ -237,9 +238,9 @@ namespace Abot2.Tests.Unit.Crawler
                 new HyperLink(){HrefValue = uri2}
             };
 
-            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(_rootUri, It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(homePage));
-            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(uri1, It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(page1));
-            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(uri2, It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(page2));
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(_rootUri, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(homePage));
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(uri1, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(page1));
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(uri2, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(page2));
             _fakeHtmlParser.Setup(f => f.GetLinks(It.Is<CrawledPage>(p => p.Uri == homePage.Uri))).Returns(links);
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPageLinks(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
@@ -247,7 +248,7 @@ namespace Abot2.Tests.Unit.Crawler
             
             _fakeRobotsDotText.Setup(f => f.GetCrawlDelay(It.IsAny<string>())).Returns(3);//this is more then the max configured crawl delay (should be ignored)
             _fakeRobotsDotText.Setup(f => f.IsUrlAllowed(It.IsAny<string>(), It.IsAny<string>())).Returns(true);
-            _fakeRobotsDotTextFinder.Setup(f => f.FindAsync(It.IsAny<Uri>())).Returns(Task.FromResult(_fakeRobotsDotText.Object));
+            _fakeRobotsDotTextFinder.Setup(f => f.FindAsync(It.IsAny<Uri>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(_fakeRobotsDotText.Object));
 
             _dummyConfiguration.IsRespectRobotsDotTextEnabled = true;//BY HAVING A THIS EQUAL TO TRUE WE EXPECT THE IDOMAINRATELIMITER TO BE CALLED
             _dummyConfiguration.MaxRobotsDotTextCrawlDelayInSeconds = 2; //This is less than the crawl delay (Should Be used)
@@ -276,14 +277,14 @@ namespace Abot2.Tests.Unit.Crawler
 
             _fakeRobotsDotText.Setup(f => f.GetCrawlDelay(It.IsAny<string>())).Returns(0);
             _fakeRobotsDotText.Setup(f => f.IsUrlAllowed(It.IsAny<string>(), It.IsAny<string>())).Returns(false);
-            _fakeRobotsDotTextFinder.Setup(f => f.FindAsync(It.IsAny<Uri>())).Returns(Task.FromResult(_fakeRobotsDotText.Object));
+            _fakeRobotsDotTextFinder.Setup(f => f.FindAsync(It.IsAny<Uri>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(_fakeRobotsDotText.Object));
 
             _dummyConfiguration.IsRespectRobotsDotTextEnabled = true;
             _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyThreadManager, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
 
             await _unitUnderTest.CrawlAsync(_rootUri);
 
-            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(homePage));
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(homePage));
             _fakeRobotsDotText.VerifyAll();
             _fakeRobotsDotTextFinder.VerifyAll();
             _fakeDomainRateLimiter.Verify(f => f.AddDomain(It.IsAny<Uri>(), It.IsAny<long>()), Times.Exactly(0));
@@ -296,8 +297,8 @@ namespace Abot2.Tests.Unit.Crawler
             var page1 = new CrawledPage(_rootUri);
 
             _fakeRobotsDotText.Setup(f => f.IsUrlAllowed(It.IsAny<string>(), It.IsAny<string>())).Returns(false);
-            _fakeRobotsDotTextFinder.Setup(f => f.FindAsync(It.IsAny<Uri>())).Returns(Task.FromResult(_fakeRobotsDotText.Object));
-            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(_rootUri, It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(page1));
+            _fakeRobotsDotTextFinder.Setup(f => f.FindAsync(It.IsAny<Uri>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(_fakeRobotsDotText.Object));
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(_rootUri, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(page1));
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision {Allow = true});
             _dummyConfiguration.IsRespectRobotsDotTextEnabled = true;
             _dummyConfiguration.IsIgnoreRobotsDotTextIfRootDisallowedEnabled = true;
@@ -318,8 +319,8 @@ namespace Abot2.Tests.Unit.Crawler
 
             _fakeRobotsDotText.Setup(f => f.IsUrlAllowed(_rootUri.AbsoluteUri, It.IsAny<string>())).Returns(true);
             _fakeRobotsDotText.Setup(f => f.IsUrlAllowed(_rootUri.AbsoluteUri + "aaaaa", It.IsAny<string>())).Returns(false);
-            _fakeRobotsDotTextFinder.Setup(f => f.FindAsync(It.IsAny<Uri>())).Returns(Task.FromResult(_fakeRobotsDotText.Object));
-            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(_rootUri, It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(page1));
+            _fakeRobotsDotTextFinder.Setup(f => f.FindAsync(It.IsAny<Uri>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(_fakeRobotsDotText.Object));
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(_rootUri, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(page1));
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
             _dummyConfiguration.IsRespectRobotsDotTextEnabled = true;
             _dummyConfiguration.IsIgnoreRobotsDotTextIfRootDisallowedEnabled = true;
@@ -355,16 +356,16 @@ namespace Abot2.Tests.Unit.Crawler
                 new HyperLink(){HrefValue = uri2}
             };
 
-            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(_rootUri, It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(homePage));
-            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(uri1, It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(page1));
-            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(uri2, It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(page2));
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(_rootUri, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(homePage));
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(uri1, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(page1));
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(uri2, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(page2));
             _fakeHtmlParser.Setup(f => f.GetLinks(It.Is<CrawledPage>(p => p.Uri == homePage.Uri))).Returns(links);
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPageLinks(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
 
             _fakeRobotsDotText.Setup(f => f.GetCrawlDelay(It.IsAny<string>())).Returns(0);
             _fakeRobotsDotText.Setup(f => f.IsUrlAllowed(It.IsAny<string>(), It.IsAny<string>())).Returns(true);
-            _fakeRobotsDotTextFinder.Setup(f => f.FindAsync(It.IsAny<Uri>())).Returns(Task.FromResult(_fakeRobotsDotText.Object));
+            _fakeRobotsDotTextFinder.Setup(f => f.FindAsync(It.IsAny<Uri>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(_fakeRobotsDotText.Object));
 
             _dummyConfiguration.IsRespectRobotsDotTextEnabled = true;
             _dummyConfiguration.RobotsDotTextUserAgentString = "abcd";

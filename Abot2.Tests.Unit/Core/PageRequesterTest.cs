@@ -14,6 +14,8 @@ namespace Abot2.Tests.Unit.Core
     [TestClass]
     public class PageRequesterTest
     {
+        public TestContext TestContext { get; set; }
+
         PageRequester _unitUnderTest;
         Uri _validUri = new Uri("http://aaa.com/");
 
@@ -45,7 +47,7 @@ namespace Abot2.Tests.Unit.Core
         [TestMethod]
         public async Task MakeRequestAsync_NullUri()
         {
-            await Assert.ThrowsExactlyAsync<ArgumentNullException>(() => _unitUnderTest.MakeRequestAsync(null));
+            await Assert.ThrowsExactlyAsync<ArgumentNullException>(() => _unitUnderTest.MakeRequestAsync(null, TestContext.CancellationToken));
         }
 
         [TestMethod]
@@ -64,10 +66,10 @@ namespace Abot2.Tests.Unit.Core
                     It.IsAny<CancellationToken>()))
                 .ReturnsAsync(
                     dummyHttpResponseMessage);
-            _fakeWebContentExtractor.Setup(f => f.GetContentAsync(dummyHttpResponseMessage)).ReturnsAsync(dummyPageContent);
+            _fakeWebContentExtractor.Setup(f => f.GetContentAsync(dummyHttpResponseMessage, It.IsAny<CancellationToken>())).ReturnsAsync(dummyPageContent);
 
             //Act
-            var result = await _unitUnderTest.MakeRequestAsync(_validUri);
+            var result = await _unitUnderTest.MakeRequestAsync(_validUri, TestContext.CancellationToken);
 
             //Assert
             _fakeHttpClient.VerifyAll();
@@ -103,7 +105,7 @@ namespace Abot2.Tests.Unit.Core
                     new HttpRequestException("Oh no"));
 
             //Act
-            var result = await _unitUnderTest.MakeRequestAsync(_validUri);
+            var result = await _unitUnderTest.MakeRequestAsync(_validUri, TestContext.CancellationToken);
 
             //Assert
             _fakeHttpClient.VerifyAll();
@@ -140,7 +142,7 @@ namespace Abot2.Tests.Unit.Core
                     new TaskCanceledException("Oh no timeout"));
 
             //Act
-            var result = await _unitUnderTest.MakeRequestAsync(_validUri);
+            var result = await _unitUnderTest.MakeRequestAsync(_validUri, TestContext.CancellationToken);
 
             //Assert
             _fakeHttpClient.VerifyAll();
@@ -180,7 +182,7 @@ namespace Abot2.Tests.Unit.Core
                     new Exception("Oh no"));
 
             //Act
-            var result = await _unitUnderTest.MakeRequestAsync(_validUri);
+            var result = await _unitUnderTest.MakeRequestAsync(_validUri, TestContext.CancellationToken);
 
             //Assert
             _fakeHttpClient.VerifyAll();
@@ -223,11 +225,11 @@ namespace Abot2.Tests.Unit.Core
                 .ReturnsAsync(
                     dummyHttpResponseMessage);
             _fakeWebContentExtractor
-                .Setup(f => f.GetContentAsync(dummyHttpResponseMessage))
+                .Setup(f => f.GetContentAsync(dummyHttpResponseMessage, It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new Exception("Oh no"));
 
             //Act
-            var result = await _unitUnderTest.MakeRequestAsync(_validUri);
+            var result = await _unitUnderTest.MakeRequestAsync(_validUri, TestContext.CancellationToken);
 
             //Assert
             _fakeHttpClient.VerifyAll();
@@ -266,7 +268,7 @@ namespace Abot2.Tests.Unit.Core
             var unitUnderTest = new InMemoryPageRequester(config, html);
 
             //Act
-            var result = await unitUnderTest.MakeRequestAsync(_validUri);
+            var result = await unitUnderTest.MakeRequestAsync(_validUri, TestContext.CancellationToken);
 
             //Assert
             Assert.IsNull(result.HttpRequestException);
@@ -358,7 +360,7 @@ namespace Abot2.Tests.Unit.Core
         {
             _unitUnderTest.Dispose();
 
-            await Assert.ThrowsExactlyAsync<ObjectDisposedException>(() => _unitUnderTest.MakeRequestAsync(_validUri));
+            await Assert.ThrowsExactlyAsync<ObjectDisposedException>(() => _unitUnderTest.MakeRequestAsync(_validUri, TestContext.CancellationToken));
         }
 
         [TestMethod]
@@ -381,6 +383,53 @@ namespace Abot2.Tests.Unit.Core
             {
                 IsDisposed = true;
                 base.Dispose(disposing);
+            }
+        }
+
+        [TestMethod]
+        public async Task MakeRequestAsync_CancelledWhileWaitingForResponse_IsCancelledInsteadOfReportedAsPageError()
+        {
+            using (var handler = new NeverRespondingHandler())
+            using (var httpClient = new HttpClient(handler))
+            using (var unitUnderTest = new PageRequester(_crawlConfig, _fakeWebContentExtractor.Object, httpClient))
+            using (var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(TestContext.CancellationToken))
+            {
+                var request = unitUnderTest.MakeRequestAsync(_validUri, cancellationTokenSource.Token);
+                await handler.RequestReceived;
+
+                cancellationTokenSource.Cancel();
+
+                await Assert.ThrowsAsync<OperationCanceledException>(() => request);
+            }
+        }
+
+        [TestMethod]
+        public async Task MakeRequestAsync_TokenAlreadyCancelled_DoesNotSendRequest()
+        {
+            using (var handler = new NeverRespondingHandler())
+            using (var httpClient = new HttpClient(handler))
+            using (var unitUnderTest = new PageRequester(_crawlConfig, _fakeWebContentExtractor.Object, httpClient))
+            using (var cancellationTokenSource = new CancellationTokenSource())
+            {
+                cancellationTokenSource.Cancel();
+
+                await Assert.ThrowsAsync<OperationCanceledException>(() => unitUnderTest.MakeRequestAsync(_validUri, cancellationTokenSource.Token));
+                Assert.IsFalse(handler.RequestReceived.IsCompleted);
+            }
+        }
+
+        //Never answers: a request only ends when it is cancelled
+        private class NeverRespondingHandler : HttpMessageHandler
+        {
+            readonly TaskCompletionSource<bool> _requestReceived = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            public Task RequestReceived => _requestReceived.Task;
+
+            protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            {
+                _requestReceived.TrySetResult(true);
+                await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+                throw new InvalidOperationException("Unreachable: the delay only ends by cancellation");
             }
         }
     }

@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Threading;
-using Timer = System.Timers.Timer;
 using Serilog;
 
 namespace Abot2.Util
@@ -8,13 +7,14 @@ namespace Abot2.Util
     public class CachedMemoryMonitor : IMemoryMonitor, IDisposable
     {
         IMemoryMonitor _memoryMonitor;
-        Timer _usageRefreshTimer;
+        ITimer _usageRefreshTimer;
         int _cachedCurrentUsageInMb;
         int _isDisposed;
 
         /// <param name="memoryMonitor">The monitor whose value is cached. Owned by the caller, who must dispose it.</param>
         /// <param name="cacheExpirationInSeconds">How often the cached value is refreshed</param>
-        public CachedMemoryMonitor(IMemoryMonitor memoryMonitor, int cacheExpirationInSeconds)
+        /// <param name="timeProvider">Clock and timer for the refreshes; if null, the system clock (TimeProvider.System)</param>
+        public CachedMemoryMonitor(IMemoryMonitor memoryMonitor, int cacheExpirationInSeconds, TimeProvider timeProvider = null)
         {
             if (memoryMonitor == null)
                 throw new ArgumentNullException("memoryMonitor");
@@ -26,14 +26,13 @@ namespace Abot2.Util
 
             UpdateCurrentUsageValue();
 
-            _usageRefreshTimer = new Timer(cacheExpirationInSeconds * 1000);
-            _usageRefreshTimer.Elapsed += (sender, e) =>
+            var refreshPeriod = TimeSpan.FromSeconds(cacheExpirationInSeconds);
+            _usageRefreshTimer = (timeProvider ?? TimeProvider.System).CreateTimer(state =>
             {
-                //System.Timers.Timer can still raise Elapsed after Stop()/Dispose()
+                //A callback already running when the timer is disposed can still get here
                 if (Volatile.Read(ref _isDisposed) == 0)
                     UpdateCurrentUsageValue();
-            };
-            _usageRefreshTimer.Start();
+            }, null, refreshPeriod, refreshPeriod);
         }
 
         protected virtual void UpdateCurrentUsageValue()
@@ -60,10 +59,7 @@ namespace Abot2.Util
                 return;
 
             if (disposing)
-            {
-                _usageRefreshTimer.Stop();
                 _usageRefreshTimer.Dispose();
-            }
         }
     }
 }

@@ -9,6 +9,8 @@ namespace Abot2.Tests.Unit.Core
     [TestClass]
     public class WebContentExtractorTest
     {
+        public TestContext TestContext { get; set; }
+
         WebContentExtractor _uut;
         string _contentString = "<!DOCTYPE html>\r\n<html>\r\n<head>\r\nblahblahblah"; 
 
@@ -32,7 +34,7 @@ namespace Abot2.Tests.Unit.Core
 
             using (var response = httpResponseMessage)
             {
-                result = await _uut.GetContentAsync(response);
+                result = await _uut.GetContentAsync(response, TestContext.CancellationToken);
             }
 
             MakeCommonAssertions(result, null);
@@ -52,7 +54,7 @@ namespace Abot2.Tests.Unit.Core
             PageContent result;
             using (var response = httpResponseMessage)
             {
-                result = await _uut.GetContentAsync(response);
+                result = await _uut.GetContentAsync(response, TestContext.CancellationToken);
             }
 
             MakeCommonAssertions(result, "utf-16", "System.Text.UnicodeEncoding");
@@ -71,7 +73,7 @@ namespace Abot2.Tests.Unit.Core
 
             using (var response = httpResponseMessage)
             {
-                result = await _uut.GetContentAsync(response);
+                result = await _uut.GetContentAsync(response, TestContext.CancellationToken);
             }
 
             MakeCommonAssertions(result, JapaneseCharset);
@@ -91,7 +93,7 @@ namespace Abot2.Tests.Unit.Core
 
             using (var response = httpResponseMessage)
             {
-                result = await _uut.GetContentAsync(response);
+                result = await _uut.GetContentAsync(response, TestContext.CancellationToken);
             }
 
             MakeCommonAssertions(result, JapaneseCharset);
@@ -110,7 +112,7 @@ namespace Abot2.Tests.Unit.Core
 
             using (var response = httpResponseMessage)
             {
-                result = await _uut.GetContentAsync(response);
+                result = await _uut.GetContentAsync(response, TestContext.CancellationToken);
             }
 
             MakeCommonAssertions(result, JapaneseCharset);
@@ -130,7 +132,7 @@ namespace Abot2.Tests.Unit.Core
 
             using (var response = httpResponseMessage)
             {
-                result = await _uut.GetContentAsync(response);
+                result = await _uut.GetContentAsync(response, TestContext.CancellationToken);
             }
 
             MakeCommonAssertions(result, JapaneseCharset);
@@ -150,7 +152,7 @@ namespace Abot2.Tests.Unit.Core
 
             using (var response = httpResponseMessage)
             {
-                result = await _uut.GetContentAsync(response);
+                result = await _uut.GetContentAsync(response, TestContext.CancellationToken);
             }
 
             MakeCommonAssertions(result, "windows-1251");
