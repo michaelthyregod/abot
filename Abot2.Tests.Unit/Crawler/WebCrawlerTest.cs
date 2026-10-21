@@ -5,6 +5,7 @@ using Abot2.Util;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Moq;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
@@ -773,36 +774,28 @@ namespace Abot2.Tests.Unit.Crawler
         public async Task Crawl_CancellationRequested_CrawlIsStoppedBeforeCompletion()
         {
             //Arrange
-            var cancellationTokenSource = new CancellationTokenSource();
-            var timer = new System.Timers.Timer(10);
-            timer.Elapsed += (o, e) =>
+            using (var cancellationTokenSource = new CancellationTokenSource())
             {
-                cancellationTokenSource.Cancel();
-                timer.Stop();
-                timer.Dispose();
-            };
-            timer.Start();
+                var pageToReturn = new PageToCrawl(_rootUri);
+                for (var i = 0; i < 100; i++)
+                    _dummyScheduler.Add(pageToReturn);
 
-            var pageToReturn = new PageToCrawl(_rootUri);
-            for (var i = 0; i < 100; i++)
-                _dummyScheduler.Add(pageToReturn);
+                //The caller cancels while the first page is being processed, so the cancellation always arrives mid-crawl
+                _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>()))
+                    .Callback(() => cancellationTokenSource.Cancel())
+                    .Returns(new CrawlDecision { Allow = true });
 
-            //Holds the first page until the timer above has cancelled, however late it fires, so the cancellation always arrives mid-crawl
-            _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>()))
-                .Callback(() => WaitHandle.WaitAny(new[] { cancellationTokenSource.Token.WaitHandle, TestContext.CancellationToken.WaitHandle }))
-                .Returns(new CrawlDecision { Allow = true });
+                //Act
+                var result = await _unitUnderTest.CrawlAsync(_rootUri, cancellationTokenSource.Token);
 
-            //Act
-            var result = await _unitUnderTest.CrawlAsync(_rootUri, cancellationTokenSource.Token);
-
-            //Assert
-            _fakeCrawlDecisionMaker.Verify(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>()), Times.Exactly(1));
-            Assert.AreEqual(0, _dummyScheduler.Count);
-            Assert.IsFalse(result.CrawlContext.IsCrawlStopRequested);
-            Assert.IsTrue(result.CrawlContext.IsCrawlHardStopRequested);
-            Assert.IsTrue(result.CrawlContext.CancellationTokenSource.IsCancellationRequested);
-
-            timer.Dispose();
+                //Assert
+                _fakeCrawlDecisionMaker.Verify(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>()), Times.Exactly(1));
+                Assert.AreEqual(0, _dummyScheduler.Count);
+                Assert.IsFalse(result.CrawlContext.IsCrawlStopRequested);
+                Assert.IsTrue(result.CrawlContext.IsCrawlHardStopRequested);
+                Assert.IsTrue(result.CrawlContext.CancellationTokenSource.IsCancellationRequested);
+                Assert.IsInstanceOfType<OperationCanceledException>(result.ErrorException);
+            }
         }
 
         [TestMethod]
@@ -836,8 +829,9 @@ namespace Abot2.Tests.Unit.Crawler
         public async Task Crawl_OverCrawlTimeoutSeconds_CrawlIsStoppedBeforeCompletion()
         {
             _dummyConfiguration.CrawlTimeoutSeconds = 1;
-            var crawler = new TimeoutSignallingCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
-            _unitUnderTest = crawler;
+            var time = new ManualTimeProvider();
+            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object, time);
+            bool? hardStoppedBeforeTimeout = null;
 
             var pageToReturn = new PageToCrawl(_rootUri);
             var crawledPage = new CrawledPage(_rootUri) { ParentUri = _rootUri };
@@ -846,18 +840,25 @@ namespace Abot2.Tests.Unit.Crawler
                 _dummyScheduler.Add(pageToReturn);
 
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>()))
-                //Holds the first page until the crawl timeout has hard-stopped the crawl, however late its timer fires
-                .Callback(() => crawler.TimedOut.Wait(TestContext.CancellationToken))
+                //The crawl clock reaches the timeout while the first page is being processed: 1 ms before it the crawl still runs, at it the crawl is hard stopped
+                .Callback<PageToCrawl, CrawlContext>((p, c) =>
+                {
+                    time.Advance(TimeSpan.FromMilliseconds(999));
+                    hardStoppedBeforeTimeout = c.IsCrawlHardStopRequested;
+                    time.Advance(TimeSpan.FromMilliseconds(1));
+                })
                 .Returns(new CrawlDecision { Allow = true });
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPageLinks(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = false });
             _fakeHttpRequester.Setup(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(crawledPage));
 
             var result = await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
+            Assert.IsFalse(hardStoppedBeforeTimeout, "The crawl should not stop before the timeout");
             _fakeCrawlDecisionMaker.Verify(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>()), Times.Exactly(1));
             Assert.AreEqual(0, _dummyScheduler.Count);
             Assert.IsFalse(result.CrawlContext.IsCrawlStopRequested);
             Assert.IsTrue(result.CrawlContext.IsCrawlHardStopRequested);
+            Assert.IsFalse(result.ErrorOccurred, "A timeout is not an error");
         }
 
         [TestMethod]
@@ -931,29 +932,96 @@ namespace Abot2.Tests.Unit.Crawler
             var page2Uri = new Uri("http://a.com/page2");
             var sharedLink = new Uri("http://a.com/shared");
 
-            using (var bothPagesParsed = new Barrier(2))
+            using (var otherPageCompleted = new ManualResetEventSlim())
             {
                 _fakeHtmlParser.Setup(f => f.GetLinks(It.Is<CrawledPage>(p => p.Uri == _rootUri)))
                     .Returns(new List<HyperLink> { new HyperLink { HrefValue = page1Uri }, new HyperLink { HrefValue = page2Uri } });
-                //Holds each page until the other has been parsed too, so both schedule their links at the same time
                 _fakeHtmlParser.Setup(f => f.GetLinks(It.Is<CrawledPage>(p => p.Uri != _rootUri)))
-                    .Callback(() => bothPagesParsed.SignalAndWait(TimeSpan.FromSeconds(5), TestContext.CancellationToken))
                     .Returns(new List<HyperLink> { new HyperLink { HrefValue = sharedLink } });
                 _fakeHttpRequester.Setup(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()))
                     .Returns<Uri, Func<CrawledPage, CrawlDecision>, CancellationToken>((uri, shouldDownloadContent, cancellationToken) => Task.FromResult(new CrawledPage(uri)));
                 _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
-                //Slow, so the other page reaches the shared link while this decision is still being made. With the fix the result
-                //does not depend on it (the lock makes the check exact); it only makes the race show reliably if the bug returns.
+                //The first page to decide on the shared link is held until the other page has completed, so the other page always
+                //reaches the shared link while that decision is being made. A held page cannot complete, so the page that completes
+                //is always the other one.
+                var sharedLinkDecisions = 0;
                 _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.Is<PageToCrawl>(p => p.Uri == sharedLink), It.IsAny<CrawlContext>()))
-                    .Callback(() => Thread.Sleep(200))
+                    .Callback(() =>
+                    {
+                        if (Interlocked.Increment(ref sharedLinkDecisions) == 1)
+                            otherPageCompleted.Wait(TestContext.CancellationToken);
+                    })
                     .Returns(new CrawlDecision { Allow = false, Reason = "Not crawled" });
                 _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPageLinks(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
                 _fakeCrawlDecisionMaker.Setup(f => f.ShouldRecrawlPage(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = false });
+                _unitUnderTest.PageCrawlCompleted += (sender, args) =>
+                {
+                    if (args.CrawledPage.Uri == page1Uri || args.CrawledPage.Uri == page2Uri)
+                        otherPageCompleted.Set();
+                };
 
                 await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
                 _fakeCrawlDecisionMaker.Verify(f => f.ShouldCrawlPage(It.Is<PageToCrawl>(p => p.Uri == sharedLink), It.IsAny<CrawlContext>()), Times.Once());
             }
+        }
+
+        [TestMethod]
+        public async Task Crawl_MaxConcurrentThreads_LimitsThePagesProcessedAtTheSameTime()
+        {
+            const int maxConcurrentPages = 3;
+            _dummyConfiguration.MaxConcurrentThreads = maxConcurrentPages;
+            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
+            var links = new List<HyperLink>();
+            for (var i = 0; i < 10; i++)
+                links.Add(new HyperLink { HrefValue = new Uri(_rootUri, "page" + i) });
+            _fakeHtmlParser.Setup(f => f.GetLinks(It.Is<CrawledPage>(p => p.Uri == _rootUri))).Returns(links);
+            _fakeHtmlParser.Setup(f => f.GetLinks(It.Is<CrawledPage>(p => p.Uri != _rootUri))).Returns(new List<HyperLink>());
+            _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
+            _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPageLinks(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
+            _fakeCrawlDecisionMaker.Setup(f => f.ShouldRecrawlPage(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = false });
+
+            //Every page but the root is held until the test releases it. A page counts as in progress until its worker has the response.
+            var startedRequests = new BlockingCollection<TaskCompletionSource<bool>>();
+            var inProgress = 0;
+            var maxInProgress = 0;
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(_rootUri, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.FromResult(new CrawledPage(_rootUri)));
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(It.Is<Uri>(u => u != _rootUri), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()))
+                .Returns<Uri, Func<CrawledPage, CrawlDecision>, CancellationToken>((uri, shouldDownloadContent, cancellationToken) =>
+                {
+                    var current = Interlocked.Increment(ref inProgress);
+                    int max;
+                    while (current > (max = Volatile.Read(ref maxInProgress)) && Interlocked.CompareExchange(ref maxInProgress, current, max) != max) { }
+
+                    var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    startedRequests.Add(release, TestContext.CancellationToken);
+                    return release.Task.ContinueWith(t =>
+                    {
+                        Interlocked.Decrement(ref inProgress);
+                        return new CrawledPage(uri);
+                    }, TaskScheduler.Default);
+                });
+
+            using (startedRequests)
+            {
+                var crawl = _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
+
+                //Page i is released only once the limit is reached again (or every page has started), so the limit is always reached
+                var started = new List<TaskCompletionSource<bool>>();
+                for (var i = 0; i < links.Count; i++)
+                {
+                    while (started.Count < Math.Min(i + maxConcurrentPages, links.Count))
+                        started.Add(startedRequests.Take(TestContext.CancellationToken));
+                    started[i].SetResult(true);
+                }
+
+                var result = await crawl;
+
+                Assert.AreEqual(links.Count + 1, result.CrawlContext.CrawledCount);
+            }
+
+            Assert.AreEqual(maxConcurrentPages, maxInProgress, "MaxConcurrentThreads pages should be processed at the same time, and never more");
         }
 
         [TestMethod]
@@ -1154,25 +1222,6 @@ namespace Abot2.Tests.Unit.Crawler
 
             unitUnderTest.Dispose();
             unitUnderTest.Dispose();
-        }
-
-        //Signals once the crawl timeout has hard-stopped the crawl, so a test can wait for it instead of sleeping
-        private class TimeoutSignallingCrawler : PoliteWebCrawler
-        {
-            public TimeoutSignallingCrawler(CrawlConfiguration crawlConfiguration, ICrawlDecisionMaker crawlDecisionMaker, IScheduler scheduler,
-                IPageRequester pageRequester, IHtmlParser htmlParser, IMemoryManager memoryManager, IDomainRateLimiter domainRateLimiter, IRobotsDotTextFinder robotsDotTextFinder)
-                : base(crawlConfiguration, crawlDecisionMaker, scheduler, pageRequester, htmlParser, memoryManager, domainRateLimiter, robotsDotTextFinder)
-            {
-            }
-
-            //Not disposed: the timeout timer may still set it after the test; without its wait handle it holds no unmanaged resources
-            public ManualResetEventSlim TimedOut { get; } = new ManualResetEventSlim();
-
-            protected override void HandleCrawlTimeout(object sender, System.Timers.ElapsedEventArgs e)
-            {
-                base.HandleCrawlTimeout(sender, e);
-                TimedOut.Set();
-            }
         }
 
         //Holds the first call of a crawler event handler until released, so a test can check that the crawl waits for its handlers

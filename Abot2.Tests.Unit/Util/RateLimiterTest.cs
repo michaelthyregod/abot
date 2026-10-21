@@ -126,16 +126,17 @@ namespace Abot2.Tests.Unit.Util
         }
 
         [TestMethod]
-        public async Task Dispose_CalledTwice_DoesNotThrow()
+        public void Dispose_CalledTwice_DoesNotThrow()
         {
-            _unitUnderTest = new RateLimiter(1, TimeSpan.FromMilliseconds(10));
+            var time = new ManualTimeProvider();
+            _unitUnderTest = new RateLimiter(1, TimeSpan.FromMilliseconds(10), time);
             _unitUnderTest.WaitToProceed();
 
             _unitUnderTest.Dispose();
             _unitUnderTest.Dispose();
 
-            //Give a timer callback that was already due the chance to run against the disposed instance
-            await Task.Delay(50, TestContext.CancellationToken);
+            //Past the time a timer started before the dispose was due, so any such timer still scheduled fires against the disposed instance
+            time.Advance(TimeSpan.FromMilliseconds(10));
         }
     }
 }
