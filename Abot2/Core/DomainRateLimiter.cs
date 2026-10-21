@@ -2,6 +2,7 @@ using Abot2.Util;
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Threading;
 using Serilog;
 
 namespace Abot2.Core
@@ -32,10 +33,17 @@ namespace Abot2.Core
         void RemoveDomain(Uri uri);
     }
 
-    public class DomainRateLimiter : IDomainRateLimiter
+    /// <summary>
+    /// Rate limits per domain. Owns the rate limiters it creates and disposes them when it is disposed.
+    /// </summary>
+    public class DomainRateLimiter : IDomainRateLimiter, IDisposable
     {
         protected ConcurrentDictionary<string, IRateLimiter> _rateLimiterLookup = new ConcurrentDictionary<string, IRateLimiter>();
         long _defaultMinCrawlDelayInMillisecs;
+
+        //Rate limiters replaced or removed while another thread may still be waiting on them, disposed with this instance
+        readonly ConcurrentBag<IRateLimiter> _retiredRateLimiters = new ConcurrentBag<IRateLimiter>();
+        int _isDisposed;
 
         public DomainRateLimiter(long minCrawlDelayMillisecs)
         {
@@ -82,12 +90,18 @@ namespace Abot2.Core
             if (minCrawlDelayInMillisecs < 1)
                 throw new ArgumentException("minCrawlDelayInMillisecs");
 
+            ThrowIfDisposed();
+
             var delayToUse = Math.Max(minCrawlDelayInMillisecs, _defaultMinCrawlDelayInMillisecs);
             if (delayToUse > 0)
             {
                 var rateLimiter = new RateLimiter(1, TimeSpan.FromMilliseconds(delayToUse));
 
-                _rateLimiterLookup.AddOrUpdate(uri.Authority, rateLimiter, (key, oldValue) => rateLimiter);
+                _rateLimiterLookup.AddOrUpdate(uri.Authority, rateLimiter, (key, oldValue) =>
+                {
+                    _retiredRateLimiters.Add(oldValue);
+                    return rateLimiter;
+                });
                 Log.Debug("Added/updated domain [{0}] with minCrawlDelayInMillisecs of [{1}] milliseconds", uri.Authority, delayToUse);
             }
         }
@@ -95,25 +109,63 @@ namespace Abot2.Core
         public void RemoveDomain(Uri uri)
         {
             IRateLimiter rateLimiter;
-            _rateLimiterLookup.TryRemove(uri.Authority, out rateLimiter);
+            if (_rateLimiterLookup.TryRemove(uri.Authority, out rateLimiter))
+                _retiredRateLimiters.Add(rateLimiter);
         }
 
         protected virtual IRateLimiter GetRateLimiter(Uri uri, long minCrawlDelayInMillisecs)
         {
+            ThrowIfDisposed();
+
             IRateLimiter rateLimiter;
             _rateLimiterLookup.TryGetValue(uri.Authority, out rateLimiter);
 
             if (rateLimiter == null && minCrawlDelayInMillisecs > 0)
             {
-                rateLimiter = new RateLimiter(1, TimeSpan.FromMilliseconds(minCrawlDelayInMillisecs));
+                var newRateLimiter = new RateLimiter(1, TimeSpan.FromMilliseconds(minCrawlDelayInMillisecs));
 
-                if (_rateLimiterLookup.TryAdd(uri.Authority, rateLimiter))
+                if (_rateLimiterLookup.TryAdd(uri.Authority, newRateLimiter))
+                {
+                    rateLimiter = newRateLimiter;
                     Log.Debug("Added new domain [{0}] with minCrawlDelayInMillisecs of [{1}] milliseconds", uri.Authority, minCrawlDelayInMillisecs);
+                }
                 else
-                    Log.Warning("Unable to add new domain [{0}] with minCrawlDelayInMillisecs of [{1}] milliseconds", uri.Authority, minCrawlDelayInMillisecs);
+                {
+                    //Another thread added this domain first, use its rate limiter so the domain shares one limit
+                    newRateLimiter.Dispose();
+                    _rateLimiterLookup.TryGetValue(uri.Authority, out rateLimiter);
+                }
             }
 
             return rateLimiter;
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (Interlocked.Exchange(ref _isDisposed, 1) != 0)
+                return;
+
+            if (disposing)
+            {
+                foreach (var rateLimiter in _rateLimiterLookup.Values)
+                    (rateLimiter as IDisposable)?.Dispose();
+                _rateLimiterLookup.Clear();
+
+                while (_retiredRateLimiters.TryTake(out var rateLimiter))
+                    (rateLimiter as IDisposable)?.Dispose();
+            }
+        }
+
+        protected void ThrowIfDisposed()
+        {
+            if (Volatile.Read(ref _isDisposed) != 0)
+                throw new ObjectDisposedException(GetType().FullName);
         }
     }
 }

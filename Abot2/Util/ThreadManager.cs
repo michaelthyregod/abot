@@ -36,7 +36,7 @@ namespace Abot2.Util
         protected int _numberOfRunningThreads = 0;
         protected ManualResetEvent _resetEvent = new ManualResetEvent(true);
         protected object _locker = new object();
-        protected bool _isDisplosed = false;
+        protected volatile bool _isDisposed = false;
 
         protected ThreadManager(int maxThreads)
         {
@@ -63,16 +63,23 @@ namespace Abot2.Util
             if (action == null)
                 throw new ArgumentNullException("action");
 
-            if (_abortAllCalled)
-                throw new InvalidOperationException("Cannot call DoWork() after AbortAll() or Dispose() have been called.");
+            if (_isDisposed)
+                throw new ObjectDisposedException(GetType().FullName);
 
-            if (!_isDisplosed && MaxThreads > 1)
+            if (_abortAllCalled)
+                throw new InvalidOperationException("Cannot call DoWork() after AbortAll() has been called.");
+
+            if (!_isDisposed && MaxThreads > 1)
             {
                 _resetEvent.WaitOne();
                 lock (_locker)
                 {
+                    //Dispose() releases callers waiting above, they must not start work
+                    if (_isDisposed)
+                        throw new ObjectDisposedException(GetType().FullName);
+
                     _numberOfRunningThreads++;
-                    if (!_isDisplosed && _numberOfRunningThreads >= MaxThreads)
+                    if (_numberOfRunningThreads >= MaxThreads)
                         _resetEvent.Reset();
 
                     Log.Debug("Starting another thread, increasing running threads to [{0}].", _numberOfRunningThreads);
@@ -94,11 +101,33 @@ namespace Abot2.Util
             }
         }
 
-        public virtual void Dispose()
+        public void Dispose()
         {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            lock (_locker)
+            {
+                if (_isDisposed)
+                    return;
+
+                _isDisposed = true;
+            }
+
+            if (!disposing)
+                return;
+
             AbortAll();
-            _resetEvent.Dispose();
-            _isDisplosed = true;
+
+            //Under the lock so a finishing thread in RunAction() cannot Set() the event after it is disposed
+            lock (_locker)
+            {
+                _resetEvent.Set();//release any DoWork() caller waiting for a free thread
+                _resetEvent.Dispose();
+            }
         }
 
         public virtual bool HasRunningThreads()
@@ -133,7 +162,7 @@ namespace Abot2.Util
                     {
                         _numberOfRunningThreads--;
                         Log.Debug("[{0}] threads are running.", _numberOfRunningThreads);
-                        if (!_isDisplosed && _numberOfRunningThreads < MaxThreads)
+                        if (!_isDisposed && _numberOfRunningThreads < MaxThreads)
                             _resetEvent.Set();
                     }
                 }

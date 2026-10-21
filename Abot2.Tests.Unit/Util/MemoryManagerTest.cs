@@ -81,5 +81,13 @@ namespace Abot2.Tests.Unit.Util
         {
             Assert.IsFalse(_uut.IsSpaceAvailable(9999999));
         }
+
+        [TestMethod]
+        public void Dispose_DoesNotDisposeMemoryMonitorPassedIn()
+        {
+            _uut.Dispose();
+
+            _fakeMemoryManager.Verify(f => f.Dispose(), Times.Never);
+        }
     }
 }

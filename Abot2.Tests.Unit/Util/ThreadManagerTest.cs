@@ -150,5 +150,32 @@ namespace Abot2.Tests.Unit.Util
             _unitUnderTest.AbortAll();
             Assert.IsFalse(_unitUnderTest.HasRunningThreads());
         }
+
+        [TestMethod]
+        public void DoWork_CalledAfterDispose_ThrowsObjectDisposedException()
+        {
+            _unitUnderTest.Dispose();
+
+            Assert.ThrowsExactly<ObjectDisposedException>(() => _unitUnderTest.DoWork(() => System.Threading.Thread.Sleep(10)));
+        }
+
+        [TestMethod]
+        public void Dispose_CalledTwice_DoesNotThrow()
+        {
+            _unitUnderTest.Dispose();
+            _unitUnderTest.Dispose();
+        }
+
+        [TestMethod]
+        public void Dispose_WhileThreadsAreRunning_DoesNotThrow()
+        {
+            for (var i = 0; i < MAXTHREADS; i++)
+                _unitUnderTest.DoWork(() => System.Threading.Thread.Sleep(50));
+
+            _unitUnderTest.Dispose();
+
+            //Let the running threads finish against the disposed instance
+            System.Threading.Thread.Sleep(200);
+        }
     }
 }

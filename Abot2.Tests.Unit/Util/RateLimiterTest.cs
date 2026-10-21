@@ -81,5 +81,28 @@ namespace Abot2.Tests.Unit.Util
             _unitUnderTest = new RateLimiter(1, TimeSpan.FromSeconds(1));
             Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => _unitUnderTest.WaitToProceed(-10));
         }
+
+        [TestMethod]
+        public void Dispose_ThenWaitToProceed_ThrowsObjectDisposedException()
+        {
+            _unitUnderTest = new RateLimiter(1, TimeSpan.FromSeconds(1));
+
+            _unitUnderTest.Dispose();
+
+            Assert.ThrowsExactly<ObjectDisposedException>(() => _unitUnderTest.WaitToProceed());
+        }
+
+        [TestMethod]
+        public void Dispose_CalledTwice_DoesNotThrow()
+        {
+            _unitUnderTest = new RateLimiter(1, TimeSpan.FromMilliseconds(10));
+            _unitUnderTest.WaitToProceed();
+
+            _unitUnderTest.Dispose();
+            _unitUnderTest.Dispose();
+
+            //Give a timer callback that was already due the chance to run against the disposed instance
+            System.Threading.Thread.Sleep(50);
+        }
     }
 }

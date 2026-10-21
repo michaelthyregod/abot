@@ -1,5 +1,6 @@
 ﻿using System;
-using System.Timers;
+using System.Threading;
+using Timer = System.Timers.Timer;
 using Serilog;
 
 namespace Abot2.Util
@@ -9,7 +10,10 @@ namespace Abot2.Util
         IMemoryMonitor _memoryMonitor;
         Timer _usageRefreshTimer;
         int _cachedCurrentUsageInMb;
+        int _isDisposed;
 
+        /// <param name="memoryMonitor">The monitor whose value is cached. Owned by the caller, who must dispose it.</param>
+        /// <param name="cacheExpirationInSeconds">How often the cached value is refreshed</param>
         public CachedMemoryMonitor(IMemoryMonitor memoryMonitor, int cacheExpirationInSeconds)
         {
             if (memoryMonitor == null)
@@ -23,7 +27,12 @@ namespace Abot2.Util
             UpdateCurrentUsageValue();
 
             _usageRefreshTimer = new Timer(cacheExpirationInSeconds * 1000);
-            _usageRefreshTimer.Elapsed += (sender, e) => UpdateCurrentUsageValue();
+            _usageRefreshTimer.Elapsed += (sender, e) =>
+            {
+                //System.Timers.Timer can still raise Elapsed after Stop()/Dispose()
+                if (Volatile.Read(ref _isDisposed) == 0)
+                    UpdateCurrentUsageValue();
+            };
             _usageRefreshTimer.Start();
         }
 
@@ -41,8 +50,20 @@ namespace Abot2.Util
 
         public void Dispose()
         {
-            _usageRefreshTimer.Stop();
-            _usageRefreshTimer.Dispose();
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (Interlocked.Exchange(ref _isDisposed, 1) != 0)
+                return;
+
+            if (disposing)
+            {
+                _usageRefreshTimer.Stop();
+                _usageRefreshTimer.Dispose();
+            }
         }
     }
 }

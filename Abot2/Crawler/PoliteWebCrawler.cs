@@ -29,6 +29,12 @@ namespace Abot2.Crawler
         protected IRobotsDotTextFinder _robotsDotTextFinder;
         protected IRobotsDotText _robotsDotText;
 
+        //What this instance created itself and therefore disposes. Anything passed in is owned by the caller.
+        private readonly DomainRateLimiter _ownedDomainRateLimiter;
+        private readonly PageRequester _ownedRobotsPageRequester;
+        private readonly WebContentExtractor _ownedRobotsContentExtractor;
+        private int _isPoliteWebCrawlerDisposed;
+
         #region Constructors
 
         public PoliteWebCrawler()
@@ -53,8 +59,34 @@ namespace Abot2.Crawler
             IRobotsDotTextFinder robotsDotTextFinder)
             : base(crawlConfiguration, crawlDecisionMaker, threadManager, scheduler, pageRequester, htmlParser, memoryManager)
         {
-            _domainRateLimiter = domainRateLimiter ?? new DomainRateLimiter(_crawlContext.CrawlConfiguration.MinCrawlDelayPerDomainMilliSeconds);
-            _robotsDotTextFinder = robotsDotTextFinder ?? new RobotsDotTextFinder(new PageRequester(_crawlContext.CrawlConfiguration, new WebContentExtractor()));
+            if (domainRateLimiter == null)
+                domainRateLimiter = _ownedDomainRateLimiter = new DomainRateLimiter(_crawlContext.CrawlConfiguration.MinCrawlDelayPerDomainMilliSeconds);
+            _domainRateLimiter = domainRateLimiter;
+
+            if (robotsDotTextFinder == null)
+            {
+                _ownedRobotsContentExtractor = new WebContentExtractor();
+                _ownedRobotsPageRequester = new PageRequester(_crawlContext.CrawlConfiguration, _ownedRobotsContentExtractor);
+                robotsDotTextFinder = new RobotsDotTextFinder(_ownedRobotsPageRequester);
+            }
+            _robotsDotTextFinder = robotsDotTextFinder;
+        }
+
+        /// <inheritdoc />
+        protected override void Dispose(bool disposing)
+        {
+            if (Interlocked.Exchange(ref _isPoliteWebCrawlerDisposed, 1) != 0)
+                return;
+
+            //The base stops the crawl threads first, which may still be rate limiting
+            base.Dispose(disposing);
+
+            if (disposing)
+            {
+                _ownedDomainRateLimiter?.Dispose();
+                _ownedRobotsPageRequester?.Dispose();
+                _ownedRobotsContentExtractor?.Dispose();
+            }
         }
 
         #endregion
@@ -62,6 +94,8 @@ namespace Abot2.Crawler
         /// <inheritdoc />
         public override async Task<CrawlResult> CrawlAsync(Uri uri, CancellationTokenSource cancellationTokenSource)
         {
+            ThrowIfDisposed();
+
             var robotsDotTextCrawlDelayInSecs = 0;
             var robotsDotTextCrawlDelayInMillisecs = 0;
 

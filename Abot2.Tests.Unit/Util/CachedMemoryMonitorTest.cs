@@ -67,5 +67,16 @@ namespace Abot2.Tests.Unit.Util
 
             _fakeMemoryMonitor.Verify(f => f.GetCurrentUsageInMb(), Times.Exactly(1));
         }
+
+        [TestMethod]
+        public void Dispose_DoesNotDisposeMemoryMonitorPassedIn()
+        {
+            _uut = new CachedMemoryMonitor(_fakeMemoryMonitor.Object, 1);
+
+            _uut.Dispose();
+            _uut.Dispose();
+
+            _fakeMemoryMonitor.Verify(f => f.Dispose(), Times.Never);
+        }
     }
 }

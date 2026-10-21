@@ -106,6 +106,16 @@ namespace Abot2.Crawler
         //Guards the MaxPagesToCrawl check, which reads CrawledCount + Scheduler.Count, against concurrent scheduling and dequeuing
         private readonly object _scheduleLock = new object();
 
+        //What this instance created itself and therefore disposes. Anything passed in is owned by the caller.
+        private readonly bool _ownsThreadManager;
+        private readonly bool _ownsScheduler;
+        private readonly bool _ownsPageRequester;
+        private readonly bool _ownsMemoryManager;
+        private readonly IWebContentExtractor _ownedContentExtractor;
+        private readonly CachedMemoryMonitor _ownedCachedMemoryMonitor;
+        private readonly GcMemoryMonitor _ownedGcMemoryMonitor;
+        private int _isDisposed;
+
         #region Public properties
 
         /// <summary>
@@ -145,6 +155,7 @@ namespace Abot2.Crawler
 
         /// <summary>
         /// Creates a crawler instance with custom settings or implementation. Passing in null for all params is the equivalent of the empty constructor.
+        /// Implementations passed in are owned by the caller, who must dispose them after this crawler; the ones created for null params are disposed with this crawler.
         /// </summary>
         /// <param name="threadManager">Distributes http requests over multiple threads</param>
         /// <param name="scheduler">Decides what link should be crawled next</param>
@@ -168,14 +179,34 @@ namespace Abot2.Crawler
             };
             CrawlBag = _crawlContext.CrawlBag;
 
+            _ownsThreadManager = threadManager == null;
             _threadManager = threadManager ?? new TaskThreadManager(_crawlContext.CrawlConfiguration.MaxConcurrentThreads > 0 ? _crawlContext.CrawlConfiguration.MaxConcurrentThreads : Environment.ProcessorCount);
+
+            _ownsScheduler = scheduler == null;
             _scheduler = scheduler ?? new Scheduler(_crawlContext.CrawlConfiguration.IsUriRecrawlingEnabled, null, null);
-            _pageRequester = pageRequester ?? new PageRequester(_crawlContext.CrawlConfiguration, new WebContentExtractor());
+
+            _ownsPageRequester = pageRequester == null;
+            if (pageRequester == null)
+            {
+                _ownedContentExtractor = new WebContentExtractor();
+                pageRequester = new PageRequester(_crawlContext.CrawlConfiguration, _ownedContentExtractor);
+            }
+            _pageRequester = pageRequester;
+
             _crawlDecisionMaker = crawlDecisionMaker ?? new CrawlDecisionMaker();
 
             if (_crawlContext.CrawlConfiguration.MaxMemoryUsageInMb > 0
                 || _crawlContext.CrawlConfiguration.MinAvailableMemoryRequiredInMb > 0)
-                _memoryManager = memoryManager ?? new MemoryManager(new CachedMemoryMonitor(new GcMemoryMonitor(), _crawlContext.CrawlConfiguration.MaxMemoryUsageCacheTimeInSeconds));
+            {
+                _ownsMemoryManager = memoryManager == null;
+                if (memoryManager == null)
+                {
+                    _ownedGcMemoryMonitor = new GcMemoryMonitor();
+                    _ownedCachedMemoryMonitor = new CachedMemoryMonitor(_ownedGcMemoryMonitor, _crawlContext.CrawlConfiguration.MaxMemoryUsageCacheTimeInSeconds);
+                    memoryManager = new MemoryManager(_ownedCachedMemoryMonitor);
+                }
+                _memoryManager = memoryManager;
+            }
 
             _htmlParser = htmlParser ?? new AngleSharpHyperlinkParser(_crawlContext.CrawlConfiguration, null);
 
@@ -194,6 +225,8 @@ namespace Abot2.Crawler
         {
             if (uri == null)
                 throw new ArgumentNullException(nameof(uri));
+
+            ThrowIfDisposed();
 
             _crawlContext.RootUri = _crawlContext.OriginalRootUri = uri;
 
@@ -219,6 +252,7 @@ namespace Abot2.Crawler
 
             if (_crawlContext.CrawlConfiguration.CrawlTimeoutSeconds > 0)
             {
+                _timeoutTimer?.Dispose();//from a previous crawl with this instance
                 _timeoutTimer = new Timer(_crawlContext.CrawlConfiguration.CrawlTimeoutSeconds * 1000);
                 _timeoutTimer.Elapsed += HandleCrawlTimeout;
                 _timeoutTimer.Start();
@@ -241,10 +275,14 @@ namespace Abot2.Crawler
             }
             finally
             {
-                _threadManager?.Dispose();
+                if (_ownsThreadManager)
+                    _threadManager?.Dispose();
+                else
+                    _threadManager?.AbortAll();
             }
 
             _timeoutTimer?.Stop();
+            _timeoutTimer?.Dispose();
 
             timer.Stop();
 
@@ -261,12 +299,49 @@ namespace Abot2.Crawler
         }
 
         /// <inheritdoc />
-        public virtual void Dispose()
+        public void Dispose()
         {
-            _threadManager?.Dispose();
-            _scheduler?.Dispose();
-            _pageRequester?.Dispose();
-            _memoryManager?.Dispose();
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        /// <summary>
+        /// Disposes what this instance created itself. Implementations passed to the constructor are owned by the caller and are not disposed.
+        /// Derived classes override this to dispose what they own and then call base.Dispose(disposing).
+        /// </summary>
+        protected virtual void Dispose(bool disposing)
+        {
+            if (Interlocked.Exchange(ref _isDisposed, 1) != 0)
+                return;
+
+            if (!disposing)
+                return;
+
+            _timeoutTimer?.Dispose();
+
+            //Stop the crawl threads before disposing what they use
+            if (_ownsThreadManager)
+                _threadManager?.Dispose();
+            else
+                _threadManager?.AbortAll();
+
+            if (_ownsScheduler)
+                _scheduler?.Dispose();
+
+            if (_ownsPageRequester)
+                _pageRequester?.Dispose();
+            _ownedContentExtractor?.Dispose();
+
+            if (_ownsMemoryManager)
+                _memoryManager?.Dispose();
+            _ownedCachedMemoryMonitor?.Dispose();
+            _ownedGcMemoryMonitor?.Dispose();
+        }
+
+        protected void ThrowIfDisposed()
+        {
+            if (Volatile.Read(ref _isDisposed) != 0)
+                throw new ObjectDisposedException(GetType().FullName);
         }
 
         #endregion
@@ -519,7 +594,12 @@ namespace Abot2.Crawler
 
             if (currentMemoryUsage > _crawlContext.CrawlConfiguration.MaxMemoryUsageInMb)
             {
-                _memoryManager.Dispose();
+                //Stop the memory monitor now rather than when the crawler is disposed, but only if this instance owns it
+                if (_ownsMemoryManager)
+                {
+                    _memoryManager.Dispose();
+                    _ownedCachedMemoryMonitor?.Dispose();
+                }
                 _memoryManager = null;
 
                 var message = string.Format("Process is using [{0}mb] of memory which is above the max configured of [{1}mb] for site [{2}]. This is configurable through the maxMemoryUsageInMb in app.conf or CrawlConfiguration.MaxMemoryUsageInMb.", currentMemoryUsage, _crawlContext.CrawlConfiguration.MaxMemoryUsageInMb, _crawlContext.RootUri);

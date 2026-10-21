@@ -13,19 +13,31 @@ namespace Abot2.Core
         /// <inheritDoc />
         public bool Contains(Uri uri)
         {
-            return _mUrlRepository.ContainsKey(uri.GetHashCode());
+            return GetRepository().ContainsKey(uri.GetHashCode());
         }
 
         /// <inheritDoc />
         public bool AddIfNew(Uri uri)
         {
-            return _mUrlRepository.TryAdd(uri.GetHashCode(), 0);
+            return GetRepository().TryAdd(uri.GetHashCode(), 0);
         }
 
         /// <inheritDoc />
-        public virtual void Dispose()
+        public void Dispose()
         {
-            _mUrlRepository = null;
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+                _mUrlRepository = null;
+        }
+
+        private ConcurrentDictionary<long, byte> GetRepository()
+        {
+            return _mUrlRepository ?? throw new ObjectDisposedException(GetType().FullName);
         }
     }
 }

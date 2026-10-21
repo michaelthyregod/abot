@@ -333,5 +333,50 @@ namespace Abot2.Tests.Unit.Core
                 });
             }
         }
+
+        [TestMethod]
+        public void Dispose_DoesNotDisposeHttpClientPassedIn()
+        {
+            var handler = new DisposeTrackingHandler();
+            var httpClient = new HttpClient(handler);
+            var unitUnderTest = new PageRequester(_crawlConfig, _fakeWebContentExtractor.Object, httpClient);
+
+            unitUnderTest.Dispose();
+
+            Assert.IsFalse(handler.IsDisposed);
+            httpClient.Dispose();
+            Assert.IsTrue(handler.IsDisposed);
+        }
+
+        [TestMethod]
+        public async Task MakeRequestAsync_AfterDispose_ThrowsObjectDisposedException()
+        {
+            _unitUnderTest.Dispose();
+
+            await Assert.ThrowsExactlyAsync<ObjectDisposedException>(() => _unitUnderTest.MakeRequestAsync(_validUri));
+        }
+
+        [TestMethod]
+        public void Dispose_CalledTwice_DoesNotThrow()
+        {
+            _unitUnderTest.Dispose();
+            _unitUnderTest.Dispose();
+        }
+
+        private class DisposeTrackingHandler : HttpMessageHandler
+        {
+            public bool IsDisposed { get; private set; }
+
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+            }
+
+            protected override void Dispose(bool disposing)
+            {
+                IsDisposed = true;
+                base.Dispose(disposing);
+            }
+        }
     }
 }

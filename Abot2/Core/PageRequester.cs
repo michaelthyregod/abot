@@ -27,9 +27,15 @@ namespace Abot2.Core
         private readonly CrawlConfiguration _config;
         private readonly IWebContentExtractor _contentExtractor;
         private readonly CookieContainer _cookieContainer = new CookieContainer();
+        private readonly object _httpClientLock = new object();
+        private readonly bool _ownsHttpClient;
         private HttpClientHandler _httpClientHandler;
-        private HttpClient _httpClient;
+        private volatile HttpClient _httpClient;
+        private int _isDisposed;
 
+        /// <param name="config">Configurable crawl values</param>
+        /// <param name="contentExtractor">Extracts the content of a response. Owned by the caller, who must dispose it.</param>
+        /// <param name="httpClient">Owned by the caller, who must dispose it; if null, an internal one is created on the first request and disposed with this instance.</param>
         public PageRequester(CrawlConfiguration config, IWebContentExtractor contentExtractor, HttpClient httpClient = null)
         {
             _config = config ?? throw new ArgumentNullException(nameof(config));
@@ -41,6 +47,7 @@ namespace Abot2.Core
                 ServicePointManager.DefaultConnectionLimit = _config.HttpServicePointConnectionLimit;
 #endif
 
+            _ownsHttpClient = httpClient == null;
             _httpClient = httpClient;
         }
 
@@ -60,10 +67,20 @@ namespace Abot2.Core
             if (uri == null)
                 throw new ArgumentNullException(nameof(uri));
 
+            ThrowIfDisposed();
+
+            //Locked so concurrent first requests share one client instead of each building (and leaking) their own
             if (_httpClient == null)
             {
-                _httpClientHandler = BuildHttpClientHandler(uri);
-                _httpClient = BuildHttpClient(_httpClientHandler);
+                lock (_httpClientLock)
+                {
+                    ThrowIfDisposed();
+                    if (_httpClient == null)
+                    {
+                        _httpClientHandler = BuildHttpClientHandler(uri);
+                        _httpClient = BuildHttpClient(_httpClientHandler);
+                    }
+                }
             }
 
             var crawledPage = new CrawledPage(uri);
@@ -130,8 +147,30 @@ namespace Abot2.Core
 
         public void Dispose()
         {
-            _httpClient?.Dispose();
-            _httpClientHandler?.Dispose();
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (Interlocked.Exchange(ref _isDisposed, 1) != 0)
+                return;
+
+            if (disposing)
+            {
+                lock (_httpClientLock)
+                {
+                    if (_ownsHttpClient)
+                        _httpClient?.Dispose();
+                    _httpClientHandler?.Dispose();//only ever built here, never passed in
+                }
+            }
+        }
+
+        protected void ThrowIfDisposed()
+        {
+            if (Volatile.Read(ref _isDisposed) != 0)
+                throw new ObjectDisposedException(GetType().FullName);
         }
         
         

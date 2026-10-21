@@ -38,8 +38,8 @@ namespace Abot2.Util
         // Timer used to trigger exiting the semaphore.
         private readonly Timer _exitTimer;
 
-        // Whether this instance is disposed.
-        private bool _isDisposed;
+        // Whether this instance is disposed (1) or not (0). An int so Dispose can set it atomically.
+        private int _isDisposed;
 
         /// <summary>
         /// Number of occurrences allowed per unit of time.
@@ -146,51 +146,61 @@ namespace Abot2.Util
         /// <param name="isDisposing">Whether this object is being disposed.</param>
         protected virtual void Dispose(bool isDisposing)
         {
-            if (!_isDisposed)
-            {
-                if (isDisposing)
-                {
-                    // The semaphore and timer both implement IDisposable and 
-                    // therefore must be disposed.
-                    _semaphore.Dispose();
-                    _exitTimer.Dispose();
+            if (Interlocked.Exchange(ref _isDisposed, 1) != 0)
+                return;
 
-                    _isDisposed = true;
-                }
+            if (isDisposing)
+            {
+                // The semaphore and timer both implement IDisposable and
+                // therefore must be disposed. The timer goes first so no new
+                // callbacks start; one that is already running is handled in ExitTimerCallback.
+                _exitTimer.Dispose();
+                _semaphore.Dispose();
             }
         }
 
-        // Callback for the exit timer that exits the semaphore based on exit times 
+        // Callback for the exit timer that exits the semaphore based on exit times
         // in the queue and then sets the timer for the nextexit time.
         private void ExitTimerCallback(object state)
         {
-            // While there are exit times that are passed due still in the queue,
-            // exit the semaphore and dequeue the exit time.
-            int exitTime;
-            var exitTimeValid = _exitTimes.TryPeek(out exitTime);
-            while (exitTimeValid)
+            if (Volatile.Read(ref _isDisposed) != 0)
+                return;
+
+            try
             {
-                if (unchecked(exitTime - Environment.TickCount) > 0)
+                // While there are exit times that are passed due still in the queue,
+                // exit the semaphore and dequeue the exit time.
+                int exitTime;
+                var exitTimeValid = _exitTimes.TryPeek(out exitTime);
+                while (exitTimeValid)
                 {
-                    break;
+                    if (unchecked(exitTime - Environment.TickCount) > 0)
+                    {
+                        break;
+                    }
+                    _semaphore.Release();
+                    _exitTimes.TryDequeue(out exitTime);
+                    exitTimeValid = _exitTimes.TryPeek(out exitTime);
                 }
-                _semaphore.Release();
-                _exitTimes.TryDequeue(out exitTime);
-                exitTimeValid = _exitTimes.TryPeek(out exitTime);
+
+                // we are already holding the next item from the queue, do not peek again
+                // although this exit time may have already pass by this stmt.
+                var timeUntilNextCheck = exitTimeValid ? Math.Min(TimeUnitMilliseconds, Math.Max(0, exitTime - Environment.TickCount)) : TimeUnitMilliseconds;
+
+                _exitTimer.Change(timeUntilNextCheck, -1);
             }
-
-            // we are already holding the next item from the queue, do not peek again
-            // although this exit time may have already pass by this stmt.
-            var timeUntilNextCheck = exitTimeValid ? Math.Min(TimeUnitMilliseconds, Math.Max(0, exitTime - Environment.TickCount)) : TimeUnitMilliseconds;
-
-            _exitTimer.Change(timeUntilNextCheck, -1);
+            catch (ObjectDisposedException)
+            {
+                // Disposed while this callback was running. An unhandled exception on a
+                // timer thread would crash the process, so there is nothing more to do.
+            }
         }
 
         // Throws an ObjectDisposedException if this object is disposed.
         private void CheckDisposed()
         {
-            if (_isDisposed)
-                throw new ObjectDisposedException("RateGate is already disposed");
+            if (Volatile.Read(ref _isDisposed) != 0)
+                throw new ObjectDisposedException(GetType().FullName);
         }
     }
 }

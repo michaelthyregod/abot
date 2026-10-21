@@ -1,6 +1,7 @@
 ﻿using Abot2.Poco;
 using System;
 using System.Collections.Concurrent;
+using System.Threading;
 
 namespace Abot2.Core
 {
@@ -32,8 +33,11 @@ namespace Abot2.Core
 
         public void Clear()
         {
-            GetQueue();
-            _urlQueue = new ConcurrentQueue<PageToCrawl>();
+            var queue = GetQueue();
+
+            //Compare-and-swap so a concurrent Dispose() cannot be undone by putting a new queue back
+            if (Interlocked.CompareExchange(ref _urlQueue, new ConcurrentQueue<PageToCrawl>(), queue) != queue)
+                GetQueue();//throws if disposed meanwhile, otherwise another Clear() already replaced the queue
         }
 
         public int Count()
@@ -41,9 +45,16 @@ namespace Abot2.Core
             return GetQueue().Count;
         }
 
-        public virtual void Dispose()
+        public void Dispose()
         {
-            _urlQueue = null;
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+                _urlQueue = null;
         }
 
         private ConcurrentQueue<PageToCrawl> GetQueue()

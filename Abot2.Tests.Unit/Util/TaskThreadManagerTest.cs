@@ -41,5 +41,29 @@ namespace Abot2.Tests.Unit.Util
             System.Threading.Thread.Sleep(200);
             Assert.AreEqual(0, count);
         }
+
+        [TestMethod]
+        public void Dispose_CancelsButDoesNotDisposeTokenSourcePassedIn()
+        {
+            var cancellationTokenSource = new CancellationTokenSource();
+            var uut = new TaskThreadManager(10, cancellationTokenSource);
+
+            uut.Dispose();
+
+            Assert.IsTrue(cancellationTokenSource.IsCancellationRequested);
+            _ = cancellationTokenSource.Token;//throws ObjectDisposedException if it was disposed
+            cancellationTokenSource.Dispose();
+        }
+
+        [TestMethod]
+        public void AbortAll_AfterTokenSourcePassedInWasDisposed_DoesNotThrow()
+        {
+            var cancellationTokenSource = new CancellationTokenSource();
+            var uut = new TaskThreadManager(10, cancellationTokenSource);
+            cancellationTokenSource.Dispose();
+
+            uut.AbortAll();
+            uut.Dispose();
+        }
     }
 }

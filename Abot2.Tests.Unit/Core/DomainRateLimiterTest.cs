@@ -241,5 +241,29 @@ namespace Abot2.Tests.Unit.Core
 
             Assert.IsTrue(timer.ElapsedMilliseconds < 100, "Expected it to take less than 100 millisecs but only took " + timer.ElapsedMilliseconds);
         }
+
+        [TestMethod]
+        public void Dispose_ThenRateLimit_ThrowsObjectDisposedException()
+        {
+            var unitUnderTest = new DomainRateLimiter(100);
+            unitUnderTest.RateLimit(new Uri("http://a.com/"));
+
+            unitUnderTest.Dispose();
+
+            Assert.ThrowsExactly<ObjectDisposedException>(() => unitUnderTest.RateLimit(new Uri("http://a.com/")));
+        }
+
+        [TestMethod]
+        public void Dispose_AfterUpdatingAndRemovingDomains_DoesNotThrow()
+        {
+            var uri = new Uri("http://a.com/");
+            var unitUnderTest = new DomainRateLimiter(100);
+            unitUnderTest.AddDomain(uri, 100);
+            unitUnderTest.AddOrUpdateDomain(uri, 200);
+            unitUnderTest.RemoveDomain(uri);
+
+            unitUnderTest.Dispose();
+            unitUnderTest.Dispose();
+        }
     }
 }

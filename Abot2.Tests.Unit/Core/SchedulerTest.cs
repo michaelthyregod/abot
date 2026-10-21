@@ -244,5 +244,29 @@ namespace Abot2.Tests.Unit.Core
 
         //    //Assert.AreEqual(0, _unitUnderTest.Count);
         //}
+
+        [TestMethod]
+        public void Dispose_DoesNotDisposeRepositoriesPassedIn()
+        {
+            _unitUnderTest.Dispose();
+
+            _fakeCrawledUrlRepo.Verify(f => f.Dispose(), Times.Never);
+            _fakePagesToCrawlRepo.Verify(f => f.Dispose(), Times.Never);
+        }
+
+        [TestMethod]
+        public void Dispose_ThenGetNext_ThrowsObjectDisposedException()
+        {
+            _unitUnderTest.Dispose();
+
+            Assert.ThrowsExactly<ObjectDisposedException>(() => _unitUnderTest.GetNext());
+        }
+
+        [TestMethod]
+        public void Dispose_CalledTwice_DoesNotThrow()
+        {
+            _unitUnderTest.Dispose();
+            _unitUnderTest.Dispose();
+        }
     }
 }

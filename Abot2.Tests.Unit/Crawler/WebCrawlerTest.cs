@@ -1047,5 +1047,41 @@ namespace Abot2.Tests.Unit.Crawler
         {
             throw new Exception("Oh No!");
         }
+
+        [TestMethod]
+        public void Dispose_DoesNotDisposeImplementationsPassedIn()
+        {
+            var fakeThreadManager = new Mock<IThreadManager>();
+            var fakeScheduler = new Mock<IScheduler>();
+            _dummyConfiguration.MaxMemoryUsageInMb = 1000;
+            var unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, fakeThreadManager.Object, fakeScheduler.Object, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
+
+            unitUnderTest.Dispose();
+
+            fakeThreadManager.Verify(f => f.Dispose(), Times.Never);
+            fakeThreadManager.Verify(f => f.AbortAll(), Times.Once);
+            fakeScheduler.Verify(f => f.Dispose(), Times.Never);
+            _fakeHttpRequester.Verify(f => f.Dispose(), Times.Never);
+            _fakeMemoryManager.Verify(f => f.Dispose(), Times.Never);
+        }
+
+        [TestMethod]
+        public async Task CrawlAsync_AfterDispose_ThrowsObjectDisposedException()
+        {
+            _unitUnderTest.Dispose();
+
+            await Assert.ThrowsExactlyAsync<ObjectDisposedException>(() => _unitUnderTest.CrawlAsync(_rootUri));
+        }
+
+        [TestMethod]
+        public void Dispose_DefaultImplementations_CalledTwice_DoesNotThrow()
+        {
+            _dummyConfiguration.MaxMemoryUsageInMb = 1000;
+            _dummyConfiguration.CrawlTimeoutSeconds = 10;
+            var unitUnderTest = new PoliteWebCrawler(_dummyConfiguration);
+
+            unitUnderTest.Dispose();
+            unitUnderTest.Dispose();
+        }
     }
 }
