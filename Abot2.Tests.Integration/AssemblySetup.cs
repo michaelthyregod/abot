@@ -31,12 +31,10 @@ namespace Abot2.Tests.Integration
         }
 
         [AssemblyCleanup]
-        public static async Task AssemblyCleanup()
+        public static void AssemblyCleanup()
         {
-            if (Site != null)
-                await Site.DisposeAsync();
-            if (SlowSite != null)
-                await SlowSite.DisposeAsync();
+            Site?.Dispose();
+            SlowSite?.Dispose();
         }
     }
 }

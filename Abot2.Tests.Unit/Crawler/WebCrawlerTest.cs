@@ -830,7 +830,7 @@ namespace Abot2.Tests.Unit.Crawler
         }
 
         [TestMethod]
-        public void CrawlBag_IsSetOnCrawlContext()
+        public async Task CrawlBag_IsSetOnCrawlContext()
         {
             _fakeHttpRequester.Setup(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>())).Returns(Task.FromResult(new CrawledPage(_rootUri)));
             _fakeHtmlParser.Setup(f => f.GetLinks(It.IsAny<CrawledPage>())).Returns(new List<HyperLink>());
@@ -841,7 +841,7 @@ namespace Abot2.Tests.Unit.Crawler
 
             _unitUnderTest.PageCrawlCompleted += (s, e) => actualCrawlContext = e.CrawlContext;
 
-            _unitUnderTest.CrawlAsync(_rootUri);
+            await _unitUnderTest.CrawlAsync(_rootUri);
 
             _fakeHttpRequester.Verify(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>()), Times.Once());
             _fakeHtmlParser.Verify(f => f.GetLinks(It.IsAny<CrawledPage>()), Times.Once());

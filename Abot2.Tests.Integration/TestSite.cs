@@ -3,12 +3,9 @@ using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging;
 
 namespace Abot2.Tests.Integration
 {
@@ -20,29 +17,36 @@ namespace Abot2.Tests.Integration
     ///   /HttpResponse/StatusXXX/PageN  returns status XXX with no links
     /// The "external" pages are served by this same server under the other loopback name (localhost vs 127.0.0.1),
     /// which the crawler treats as a different domain, so all traffic stays on the machine.
+    /// Built on HttpListener so it runs on both .NET and .NET Framework.
     /// </summary>
-    internal sealed class TestSite : IAsyncDisposable
+    internal sealed class TestSite : IDisposable
     {
         public const int GeneratorPageCount = 4;
         public const int ExternalPageCount = 2;
 
         // Status code and number of links per generator page, in the same proportions as the old app
-        static readonly (int Status, int Count)[] LinksPerGeneratorPage =
+        static readonly StatusLinks[] LinksPerGeneratorPage =
         {
-            (200, 5), (403, 1), (404, 2), (500, 3), (503, 4)
+            new StatusLinks(200, 5), new StatusLinks(403, 1), new StatusLinks(404, 2), new StatusLinks(500, 3), new StatusLinks(503, 4)
         };
 
         const string GeneratorQuery = "Status200Count=5&Status403Count=1&Status404Count=2&Status500Count=3&Status503Count=4";
 
-        readonly WebApplication _app;
-        readonly TimeSpan _responseDelay;
+        static readonly Regex StatusPageRoute = new Regex(@"^/HttpResponse/Status(\d+)/Page(\d+)$", RegexOptions.IgnoreCase);
+        static readonly Regex ExternalPageRoute = new Regex(@"^/External/Page(\d+)$", RegexOptions.IgnoreCase);
 
-        TestSite(WebApplication app, int port, TimeSpan responseDelay)
+        readonly HttpListener _listener;
+        readonly TimeSpan _responseDelay;
+        readonly CancellationTokenSource _stopping = new CancellationTokenSource();
+        readonly Task _acceptLoop;
+
+        TestSite(HttpListener listener, int port, TimeSpan responseDelay)
         {
-            _app = app;
+            _listener = listener;
             _responseDelay = responseDelay;
             BaseUri = new Uri($"http://127.0.0.1:{port}/");
             ExternalBaseUri = new Uri($"http://localhost:{port}/");
+            _acceptLoop = Task.Run(AcceptRequestsAsync);
         }
 
         /// <summary>Root of the site, the uri to crawl</summary>
@@ -53,21 +57,18 @@ namespace Abot2.Tests.Integration
 
         /// <param name="responseDelay">Delay added before every response, used by tests that need a crawl to take a while</param>
         /// <param name="cancellationToken">Cancels starting the site</param>
-        public static async Task<TestSite> StartAsync(TimeSpan responseDelay = default, CancellationToken cancellationToken = default)
+        public static Task<TestSite> StartAsync(TimeSpan responseDelay = default, CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var port = GetFreeTcpPort();
 
-            var builder = WebApplication.CreateSlimBuilder();
-            builder.Logging.ClearProviders();
-            // Listens on both 127.0.0.1 and ::1 so "localhost" connects immediately whichever address it resolves to
-            builder.WebHost.ConfigureKestrel(options => options.ListenLocalhost(port));
+            var listener = new HttpListener();
+            listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+            listener.Prefixes.Add($"http://localhost:{port}/");
+            listener.Start();
 
-            var app = builder.Build();
-            var site = new TestSite(app, port, responseDelay);
-            site.MapRoutes();
-
-            await app.StartAsync(cancellationToken);
-            return site;
+            return Task.FromResult(new TestSite(listener, port, responseDelay));
         }
 
         /// <summary>Every page a full crawl with external page crawling enabled should find, with its http status</summary>
@@ -78,10 +79,10 @@ namespace Abot2.Tests.Integration
             for (var page = 1; page <= GeneratorPageCount; page++)
                 pages.Add(new PageResult { Url = new Uri(BaseUri, GeneratorPath(page)).AbsoluteUri, HttpStatusCode = 200 });
 
-            foreach (var (status, count) in LinksPerGeneratorPage)
+            foreach (var links in LinksPerGeneratorPage)
             {
-                for (var page = 1; page <= count * GeneratorPageCount; page++)
-                    pages.Add(new PageResult { Url = new Uri(BaseUri, StatusPath(status, page)).AbsoluteUri, HttpStatusCode = status });
+                for (var page = 1; page <= links.Count * GeneratorPageCount; page++)
+                    pages.Add(new PageResult { Url = new Uri(BaseUri, StatusPath(links.Status, page)).AbsoluteUri, HttpStatusCode = links.Status });
             }
 
             for (var page = 1; page <= ExternalPageCount; page++)
@@ -90,21 +91,70 @@ namespace Abot2.Tests.Integration
             return pages;
         }
 
-        public ValueTask DisposeAsync()
+        public void Dispose()
         {
-            return _app.DisposeAsync();
+            _stopping.Cancel();
+            _listener.Close();//makes the pending GetContextAsync() throw, which ends the accept loop
+
+            try
+            {
+                _acceptLoop.Wait(TimeSpan.FromSeconds(5));
+            }
+            catch (AggregateException)
+            {
+                //The loop only ends by the listener closing, there is nothing to report
+            }
+
+            _stopping.Dispose();
         }
 
-        void MapRoutes()
+        async Task AcceptRequestsAsync()
         {
-            _app.Use(async (context, next) =>
+            while (!_stopping.IsCancellationRequested)
+            {
+                HttpListenerContext context;
+                try
+                {
+                    context = await _listener.GetContextAsync().ConfigureAwait(false);
+                }
+                catch (Exception e) when (e is HttpListenerException || e is ObjectDisposedException || e is InvalidOperationException)
+                {
+                    return;//the listener was closed
+                }
+
+                _ = Task.Run(() => RespondAsync(context));
+            }
+        }
+
+        async Task RespondAsync(HttpListenerContext context)
+        {
+            try
             {
                 if (_responseDelay > TimeSpan.Zero)
-                    await Task.Delay(_responseDelay, context.RequestAborted);
-                await next(context);
-            });
+                    await Task.Delay(_responseDelay, _stopping.Token).ConfigureAwait(false);
 
-            _app.MapGet("/", () =>
+                Route(context.Request.Url, out var status, out var html);
+
+                var body = Encoding.UTF8.GetBytes(html);
+                context.Response.StatusCode = status;
+                context.Response.ContentType = "text/html; charset=utf-8";
+                context.Response.ContentLength64 = body.Length;
+                await context.Response.OutputStream.WriteAsync(body, 0, body.Length).ConfigureAwait(false);
+                context.Response.Close();
+            }
+            catch (Exception)
+            {
+                //The crawler cancelled the request or the site is shutting down
+                try { context.Response.Abort(); } catch (Exception) { }
+            }
+        }
+
+        void Route(Uri url, out int status, out string html)
+        {
+            var path = url.AbsolutePath;
+            status = 200;
+
+            if (path == "/")
             {
                 var links = new List<string>();
                 for (var page = 1; page <= GeneratorPageCount; page++)
@@ -112,27 +162,54 @@ namespace Abot2.Tests.Integration
                 for (var page = 1; page <= ExternalPageCount; page++)
                     links.Add(new Uri(ExternalBaseUri, ExternalPath(page)).AbsoluteUri);
 
-                return Html("Home", links);
-            });
+                html = HtmlDocument("Home", links);
+                return;
+            }
 
             // Page numbers are assigned per generator page, so links are the same whatever order pages are requested in
-            _app.MapGet("/PageGenerator/Generate", (int page) =>
+            if (string.Equals(path, "/PageGenerator/Generate", StringComparison.OrdinalIgnoreCase)
+                && int.TryParse(GetQueryValue(url, "Page"), out var generatorPage))
             {
                 var links = new List<string>();
-                foreach (var (status, count) in LinksPerGeneratorPage)
+                foreach (var statusLinks in LinksPerGeneratorPage)
                 {
-                    for (var i = 1; i <= count; i++)
-                        links.Add(StatusPath(status, (page - 1) * count + i));
+                    for (var i = 1; i <= statusLinks.Count; i++)
+                        links.Add(StatusPath(statusLinks.Status, (generatorPage - 1) * statusLinks.Count + i));
                 }
 
-                return Html("Generated page " + page, links);
-            });
+                html = HtmlDocument("Generated page " + generatorPage, links);
+                return;
+            }
 
-            _app.MapGet("/HttpResponse/Status{status:int}/Page{page:int}", (int status, int page) =>
-                Results.Content(HtmlDocument($"Status {status} page {page}", new List<string>()), "text/html", Encoding.UTF8, status));
+            var match = StatusPageRoute.Match(path);
+            if (match.Success)
+            {
+                status = int.Parse(match.Groups[1].Value);
+                html = HtmlDocument($"Status {status} page {match.Groups[2].Value}", new List<string>());
+                return;
+            }
 
-            _app.MapGet("/External/Page{page:int}", (int page) =>
-                Html("External page " + page, new List<string>()));
+            match = ExternalPageRoute.Match(path);
+            if (match.Success)
+            {
+                html = HtmlDocument("External page " + match.Groups[1].Value, new List<string>());
+                return;
+            }
+
+            status = 404;
+            html = string.Empty;
+        }
+
+        static string GetQueryValue(Uri url, string name)
+        {
+            foreach (var pair in url.Query.TrimStart('?').Split('&'))
+            {
+                var parts = pair.Split(new[] { '=' }, 2);
+                if (parts.Length == 2 && string.Equals(Uri.UnescapeDataString(parts[0]), name, StringComparison.OrdinalIgnoreCase))
+                    return Uri.UnescapeDataString(parts[1]);
+            }
+
+            return null;
         }
 
         static string GeneratorPath(int page) => $"/PageGenerator/Generate?{GeneratorQuery}&Page={page}";
@@ -140,9 +217,6 @@ namespace Abot2.Tests.Integration
         static string StatusPath(int status, int page) => $"/HttpResponse/Status{status}/Page{page}";
 
         static string ExternalPath(int page) => $"/External/Page{page}";
-
-        static IResult Html(string title, List<string> links) =>
-            Results.Content(HtmlDocument(title, links), "text/html", Encoding.UTF8);
 
         static string HtmlDocument(string title, List<string> links)
         {
@@ -161,6 +235,19 @@ namespace Abot2.Tests.Integration
             var port = ((IPEndPoint)listener.LocalEndpoint).Port;
             listener.Stop();
             return port;
+        }
+
+        sealed class StatusLinks
+        {
+            public StatusLinks(int status, int count)
+            {
+                Status = status;
+                Count = count;
+            }
+
+            public int Status { get; }
+
+            public int Count { get; }
         }
     }
 }
