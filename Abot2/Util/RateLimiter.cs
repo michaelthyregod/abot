@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Threading;
 
 namespace Abot2.Util
@@ -32,8 +33,12 @@ namespace Abot2.Util
         // unit time.
         private readonly SemaphoreSlim _semaphore;
 
-        // Times (in millisecond ticks) at which the semaphore should be exited.
-        private readonly ConcurrentQueue<int> _exitTimes;
+        // Clock the exit times are measured on. Stopwatch is precise on every platform, unlike
+        // Environment.TickCount, which on .NET Framework only advances every ~15 ms and let waits end early.
+        private readonly Stopwatch _clock = Stopwatch.StartNew();
+
+        // Times (in milliseconds on _clock) at which the semaphore should be exited.
+        private readonly ConcurrentQueue<long> _exitTimes;
 
         // Timer used to trigger exiting the semaphore.
         private readonly Timer _exitTimer;
@@ -77,7 +82,7 @@ namespace Abot2.Util
             _semaphore = new SemaphoreSlim(Occurrences, Occurrences);
 
             // Create a queue to hold the semaphore exit times.
-            _exitTimes = new ConcurrentQueue<int>();
+            _exitTimes = new ConcurrentQueue<long>();
 
             // Create a timer to exit the semaphore. Use the time unit as the original
             // interval length because that's the earliest we will need to exit the semaphore.
@@ -105,7 +110,7 @@ namespace Abot2.Util
             // and add it to the queue.
             if (entered)
             {
-                var timeToExit = unchecked(Environment.TickCount + TimeUnitMilliseconds);
+                var timeToExit = _clock.ElapsedMilliseconds + TimeUnitMilliseconds;
                 _exitTimes.Enqueue(timeToExit);
             }
 
@@ -170,11 +175,11 @@ namespace Abot2.Util
             {
                 // While there are exit times that are passed due still in the queue,
                 // exit the semaphore and dequeue the exit time.
-                int exitTime;
+                long exitTime;
                 var exitTimeValid = _exitTimes.TryPeek(out exitTime);
                 while (exitTimeValid)
                 {
-                    if (unchecked(exitTime - Environment.TickCount) > 0)
+                    if (exitTime - _clock.ElapsedMilliseconds > 0)
                     {
                         break;
                     }
@@ -185,7 +190,7 @@ namespace Abot2.Util
 
                 // we are already holding the next item from the queue, do not peek again
                 // although this exit time may have already pass by this stmt.
-                var timeUntilNextCheck = exitTimeValid ? Math.Min(TimeUnitMilliseconds, Math.Max(0, exitTime - Environment.TickCount)) : TimeUnitMilliseconds;
+                var timeUntilNextCheck = exitTimeValid ? Math.Min(TimeUnitMilliseconds, Math.Max(0, exitTime - _clock.ElapsedMilliseconds)) : TimeUnitMilliseconds;
 
                 _exitTimer.Change(timeUntilNextCheck, -1);
             }
