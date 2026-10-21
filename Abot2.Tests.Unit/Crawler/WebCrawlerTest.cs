@@ -967,8 +967,6 @@ namespace Abot2.Tests.Unit.Crawler
         }
 
         [TestMethod]
-        //Retry-After is only about a second ahead, so a delay from other tests running at the same time can make it already passed
-        [DoNotParallelize]
         public async Task Crawl_CanExtractRetryAfterDateFromHeaders()
         {
             _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyThreadManager, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
@@ -984,7 +982,7 @@ namespace Abot2.Tests.Unit.Crawler
             {
                 RequestMessage = httpRequestMessage
             };
-            httpResponseMessage.Headers.Add("Retry-After", $"{DateTime.Now.AddSeconds(1):ddd,' 'dd' 'MMM' 'yyyy' 'HH':'mm':'ss' 'K}");
+            httpResponseMessage.Headers.Add("Retry-After", $"{DateTime.Now.AddSeconds(3):ddd,' 'dd' 'MMM' 'yyyy' 'HH':'mm':'ss' 'K}");
             var page = new CrawledPage(_rootUri)
             {
                 HttpRequestException = new HttpRequestException("aaa"),
@@ -997,7 +995,7 @@ namespace Abot2.Tests.Unit.Crawler
             var watch = new Stopwatch();
             watch.Start();
             await _unitUnderTest.CrawlAsync(_rootUri);
-            watch.Start();
+            watch.Stop();
 
             Assert.IsGreaterThan(2000, watch.ElapsedMilliseconds);
             Assert.IsTrue(page.RetryAfter > 0);
