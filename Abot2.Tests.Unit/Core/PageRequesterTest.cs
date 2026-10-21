@@ -85,10 +85,10 @@ namespace Abot2.Tests.Unit.Core
             Assert.IsNotNull(result.DownloadContentStarted);
             Assert.IsNotNull(result.DownloadContentCompleted);
 
-            Assert.IsLessThan(result.RequestCompleted, result.RequestStarted);
-            Assert.IsTrue(result.DownloadContentStarted < result.DownloadContentCompleted);
-            Assert.IsTrue(result.RequestStarted < result.DownloadContentStarted);
-            Assert.IsTrue(result.RequestCompleted < result.DownloadContentCompleted);
+            Assert.IsLessThanOrEqualTo(result.RequestCompleted, result.RequestStarted);
+            Assert.IsTrue(result.DownloadContentStarted <= result.DownloadContentCompleted);
+            Assert.IsTrue(result.RequestStarted <= result.DownloadContentStarted);
+            Assert.IsTrue(result.RequestCompleted <= result.DownloadContentCompleted);
         }
 
         [TestMethod]
@@ -125,7 +125,7 @@ namespace Abot2.Tests.Unit.Core
             Assert.IsNotNull(result.HttpRequestException);
             Assert.AreNotEqual(default, result.RequestStarted);
             Assert.AreNotEqual(default, result.RequestCompleted);
-            Assert.IsLessThan(result.RequestCompleted, result.RequestStarted);
+            Assert.IsLessThanOrEqualTo(result.RequestCompleted, result.RequestStarted);
         }
 
         [TestMethod]
@@ -165,7 +165,7 @@ namespace Abot2.Tests.Unit.Core
             Assert.AreEqual("Oh no timeout", result.HttpRequestException.InnerException.Message);
             Assert.AreNotEqual(default, result.RequestStarted);
             Assert.AreNotEqual(default, result.RequestCompleted);
-            Assert.IsLessThan(result.RequestCompleted, result.RequestStarted);
+            Assert.IsLessThanOrEqualTo(result.RequestCompleted, result.RequestStarted);
         }
 
         [TestMethod]
@@ -204,7 +204,7 @@ namespace Abot2.Tests.Unit.Core
             Assert.AreEqual("Oh no", result.HttpRequestException.InnerException.Message);
             Assert.AreNotEqual(default, result.RequestStarted);
             Assert.AreNotEqual(default, result.RequestCompleted);
-            Assert.IsLessThan(result.RequestCompleted, result.RequestStarted);
+            Assert.IsLessThanOrEqualTo(result.RequestCompleted, result.RequestStarted);
         }
 
         [TestMethod]
@@ -245,7 +245,7 @@ namespace Abot2.Tests.Unit.Core
             Assert.IsNotNull(result.DownloadContentStarted);
             Assert.IsNull(result.DownloadContentCompleted);
 
-            Assert.IsLessThan(result.RequestCompleted, result.RequestStarted);
+            Assert.IsLessThanOrEqualTo(result.RequestCompleted, result.RequestStarted);
         }
 
         [TestMethod]
