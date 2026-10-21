@@ -20,18 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Update="Crawler\WebCrawlerTest.cs">
-      <SubType>Code</SubType>
-    </Compile>
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Update="HtmlAgilityPackStackOverflow1.html">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="HtmlAgilityPackStackOverflow2.html">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
+    <None Update="*.html" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
