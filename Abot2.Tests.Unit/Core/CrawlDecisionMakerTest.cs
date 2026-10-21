@@ -13,6 +13,9 @@ namespace Abot2.Tests.Unit.Core
     [TestClass]
     public class CrawlDecisionMakerTest
     {
+        //The decision maker never reads the crawl start date, so any fixed value will do
+        static readonly DateTime CrawlStartDate = new DateTime(2026, 1, 1, 12, 0, 0);
+
         CrawlDecisionMaker _unitUnderTest;
         CrawlContext _crawlContext;
         CrawledPage _validCrawledPage;
@@ -56,7 +59,7 @@ namespace Abot2.Tests.Unit.Core
         [TestMethod]
         public void ShouldCrawlPage_NonDuplicate_ReturnsTrue()
         {
-            _crawlContext.CrawlStartDate = DateTime.Now;
+            _crawlContext.CrawlStartDate = CrawlStartDate;
 
             var result = _unitUnderTest.ShouldCrawlPage(
                 new PageToCrawl(new Uri("http://a.com/"))
@@ -156,7 +159,7 @@ namespace Abot2.Tests.Unit.Core
         [TestMethod]
         public void ShouldCrawlPage_IsExternalPageCrawlingEnabledFalse_PageIsExternal_ReturnsFalse()
         {
-            _crawlContext.CrawlStartDate = DateTime.Now.AddSeconds(-100);
+            _crawlContext.CrawlStartDate = CrawlStartDate.AddSeconds(-100);
             _crawlContext.CrawlConfiguration.CrawlTimeoutSeconds = 0;
             var result = _unitUnderTest.ShouldCrawlPage(
                 new PageToCrawl(new Uri("http://a.com/"))
@@ -175,7 +178,7 @@ namespace Abot2.Tests.Unit.Core
         public void ShouldCrawlPage_IsExternalPageCrawlingEnabledTrue_PageIsExternal_ReturnsTrue()
         {
             _crawlContext.CrawlConfiguration.IsExternalPageCrawlingEnabled = true;
-            _crawlContext.CrawlStartDate = DateTime.Now;
+            _crawlContext.CrawlStartDate = CrawlStartDate;
 
             var result = _unitUnderTest.ShouldCrawlPage(
                 new PageToCrawl(new Uri("http://a.com/"))
@@ -194,7 +197,7 @@ namespace Abot2.Tests.Unit.Core
         public void ShouldCrawlPage_IsExternalPageCrawlingEnabledFalse_PageIsInternal_ReturnsTrue()
         {
             _crawlContext.CrawlConfiguration.IsExternalPageCrawlingEnabled = false;
-            _crawlContext.CrawlStartDate = DateTime.Now;
+            _crawlContext.CrawlStartDate = CrawlStartDate;
 
             var result = _unitUnderTest.ShouldCrawlPage(
                 new PageToCrawl(new Uri("http://a.com/"))
@@ -213,7 +216,7 @@ namespace Abot2.Tests.Unit.Core
         public void ShouldCrawlPage_IsExternalPageCrawlingEnabledTrue_PageIsInternal_ReturnsTrue()
         {
             _crawlContext.CrawlConfiguration.IsExternalPageCrawlingEnabled = true;
-            _crawlContext.CrawlStartDate = DateTime.Now;
+            _crawlContext.CrawlStartDate = CrawlStartDate;
 
             var result = _unitUnderTest.ShouldCrawlPage(
                 new PageToCrawl(new Uri("http://a.com/"))
@@ -236,7 +239,7 @@ namespace Abot2.Tests.Unit.Core
             var countByDomain = new ConcurrentDictionary<string,int>();
             countByDomain.TryAdd(uri.Authority, 100);
 
-            _crawlContext.CrawlStartDate = DateTime.Now;
+            _crawlContext.CrawlStartDate = CrawlStartDate;
             _crawlContext.CrawlCountByDomain = countByDomain;
             _crawlContext.CrawlConfiguration.MaxPagesToCrawlPerDomain = 100;
 
@@ -266,7 +269,7 @@ namespace Abot2.Tests.Unit.Core
             var crawlContext = new CrawlContext
             {
                 CrawlConfiguration = config,
-                CrawlStartDate = DateTime.Now,
+                CrawlStartDate = CrawlStartDate,
                 CrawlCountByDomain = countByDomain
             };
 

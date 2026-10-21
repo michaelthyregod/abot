@@ -183,11 +183,12 @@ namespace Abot2.Tests.Integration
             crawler.PageCrawlCompleted += (a, b) => Interlocked.Increment(ref pagesCrawledCount);
 
             var uriToCrawl = SetupAssemblyInitializer.Site.BaseUri;
-            var start = DateTime.Now;
+            //A guaranteed minimum: rate limiting really waits. Stopwatch, unlike DateTime.Now, cannot jump
+            var timer = System.Diagnostics.Stopwatch.StartNew();
             await crawler.CrawlAsync(uriToCrawl);
-            var elapsed = DateTime.Now - start;
+            timer.Stop();
 
-            Assert.IsGreaterThan(2000, elapsed.TotalMilliseconds);
+            Assert.IsGreaterThan(2000, timer.ElapsedMilliseconds);
             Assert.AreEqual(3, pagesCrawledCount);
         }
 

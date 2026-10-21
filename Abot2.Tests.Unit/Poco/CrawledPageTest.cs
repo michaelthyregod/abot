@@ -239,13 +239,14 @@ namespace Abot2.Tests.Unit.Poco
         [TestMethod]
         public void Elapsed_ReturnsDiffInMilli()
         {
+            var requestStarted = new DateTime(2026, 1, 1, 12, 0, 0);
             var uut = new CrawledPage(new Uri("http://a.com"))
             {
-                RequestStarted = DateTime.Now.AddSeconds(-5),
-                RequestCompleted = DateTime.Now
+                RequestStarted = requestStarted,
+                RequestCompleted = requestStarted.AddSeconds(5)
             };
 
-            Assert.IsGreaterThanOrEqualTo(5000, uut.Elapsed, "Expected >= 5000 but was " + uut.Elapsed);
+            Assert.AreEqual(5000, uut.Elapsed);
         }
 
         private string GetFileContent(string fileName)
