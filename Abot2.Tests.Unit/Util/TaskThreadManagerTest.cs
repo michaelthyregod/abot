@@ -1,18 +1,16 @@
-﻿using System.Threading.Tasks;
+﻿using System;
 using Abot2.Util;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Threading;
 
 namespace Abot2.Tests.Unit.Util
 {
-    //Expects background work to finish within fixed sleeps, which other tests running at the same time could delay
     [TestClass]
-    [DoNotParallelize]
     public class TaskThreadManagerTest : ThreadManagerTest
     {
         protected override IThreadManager GetInstance(int maxThreads)
         {
-            return new TaskThreadManager(maxThreads);
+            return new ObservableTaskThreadManager(maxThreads);
         }
 
         //Cancellation only stops work that has not started yet, work already running is not interrupted. These tests used to cancel
@@ -31,17 +29,17 @@ namespace Abot2.Tests.Unit.Util
         }
 
         [TestMethod]
-        public async Task DoWork_TokenCanceled_WorkNeverStarts()
+        public void DoWork_TokenCanceled_WorkNeverStarts()
         {
             var cancellationTokenSource = new CancellationTokenSource();
             var uut = new TaskThreadManager(10, cancellationTokenSource);
             cancellationTokenSource.Cancel();
 
+            //A task started with an already cancelled token is cancelled before DoWork returns, so it can never run afterwards
             var count = 0;
             for (var i = 0; i < 5; i++)
                 uut.DoWork(() => Interlocked.Increment(ref count));
 
-            await Task.Delay(200, TestContext.CancellationToken);
             Assert.AreEqual(0, count);
         }
 
@@ -67,6 +65,29 @@ namespace Abot2.Tests.Unit.Util
 
             uut.AbortAll();
             uut.Dispose();
+        }
+
+        private class ObservableTaskThreadManager : TaskThreadManager, ICompletedWorkSignal
+        {
+            public ObservableTaskThreadManager(int maxThreads)
+                : base(maxThreads)
+            {
+            }
+
+            //Not disposed: a work item finishing after the test may still release it, and SemaphoreSlim holds no unmanaged resources unless its wait handle is used
+            public SemaphoreSlim CompletedWork { get; } = new SemaphoreSlim(0);
+
+            protected override void RunAction(Action action, bool decrementRunningThreadCountOnCompletion = true)
+            {
+                try
+                {
+                    base.RunAction(action, decrementRunningThreadCountOnCompletion);
+                }
+                finally
+                {
+                    CompletedWork.Release();
+                }
+            }
         }
     }
 }
