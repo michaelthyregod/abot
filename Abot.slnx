@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="Abot2/Abot2.csproj" />
+  <Project Path="Abot2.Demo/Abot2.Demo.csproj" />
+  <Project Path="Abot2.Tests.Integration/Abot2.Tests.Integration.csproj" />
+  <Project Path="Abot2.Tests.Unit/Abot2.Tests.Unit.csproj" />
+</Solution>
