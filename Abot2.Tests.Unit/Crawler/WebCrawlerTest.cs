@@ -759,9 +759,9 @@ namespace Abot2.Tests.Unit.Crawler
             for (var i = 0; i < 100; i++)
                 _dummyScheduler.Add(pageToReturn);
 
-            //Slow enough that the timer above always cancels while the crawl is still running
+            //Holds the first page until the timer above has cancelled, however late it fires, so the cancellation always arrives mid-crawl
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>()))
-                .Callback(() => Thread.Sleep(200))
+                .Callback(() => WaitHandle.WaitAny(new[] { cancellationTokenSource.Token.WaitHandle, TestContext.CancellationToken.WaitHandle }))
                 .Returns(new CrawlDecision { Allow = true });
 
             //Act
