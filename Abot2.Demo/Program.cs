@@ -22,10 +22,12 @@ namespace Abot2.Demo
 
             Log.Information("Demo starting up!");
 
-            //Which demos run, and the uri each one uses, are set in appsettings.json
+            //Which demos run, and the uri each one uses, are set in appsettings.json.
+            //appsettings.Local.json, if present, overrides it and is ignored by git, for your own settings.
             var settings = new ConfigurationBuilder()
                 .SetBasePath(AppContext.BaseDirectory)
                 .AddJsonFile("appsettings.json", optional: false)
+                .AddJsonFile("appsettings.Local.json", optional: true)
                 .Build();
 
             var ranAny = false;
@@ -51,7 +53,7 @@ namespace Abot2.Demo
             var key = $"Demos:{demo}:Enabled";
             var value = settings[key];
             if (!bool.TryParse(value, out var enabled))
-                throw new InvalidOperationException($"Set {key} in appsettings.json to true or false; it is [{value}].");
+                throw new InvalidOperationException($"Set {key} in appsettings.json or appsettings.Local.json to true or false; it is [{value}].");
 
             return enabled;
         }
@@ -61,7 +63,7 @@ namespace Abot2.Demo
             var key = $"Demos:{demo}:Uri";
             var value = settings[key];
             if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
-                throw new InvalidOperationException($"Set {key} in appsettings.json to the absolute uri the {demo} demo should use; it is [{value}].");
+                throw new InvalidOperationException($"Set {key} in appsettings.json or appsettings.Local.json to the absolute uri the {demo} demo should use; it is [{value}].");
 
             return uri;
         }
