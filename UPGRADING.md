@@ -339,6 +339,7 @@ These need no action, but may change what you observe:
 - `CompactCrawledUrlRepository`, the default crawled-URL store, now identifies URLs by a 64-bit hash that is the same in every process. 2.x used `Uri.GetHashCode()`: only 32 bits, so different URLs could share a hash (about 100 pairs per million URLs) and the second page was skipped as already crawled. On .NET Core and later that hash is also seeded randomly per process, so which page was skipped changed from run to run. Which URLs count as duplicates is unchanged.
 - `BloomFilter<string>` (used by `BloomFilterCrawledUrlRepository`) no longer uses `string.GetHashCode()`, so its results are the same on every run.
 - When a page declares a charset that .NET doesn't know, the warning now includes the charset. 2.x logged a broken message template instead.
+- When the crawler follows redirects itself (`IsHttpRequestAutoRedirectsEnabled = false`), a redirect response without a `Location` header is logged as a warning and not followed. 2.x treated it as a redirect to the site's base URI. For example, it crawled `http://a.com/` again when recrawling was enabled, or made it the new crawl root when the root page answered that way.
 
 ### 5.8 Abot can run on a clock you control
 

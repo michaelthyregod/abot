@@ -1191,6 +1191,36 @@ namespace Abot2.Tests.Unit.Crawler
             Assert.IsTrue(result.CrawlContext.IsCrawlHardStopRequested);
         }
 
+        [TestMethod]
+        public async Task Crawl_RedirectWithoutLocationHeader_IsNotFollowed()
+        {
+            //With recrawling enabled, following the missing location (which resolves to the site's base uri, the root here) would crawl the root again
+            _dummyConfiguration.IsUriRecrawlingEnabled = true;
+            var redirectingPage = new Uri("http://a.com/redirecting");
+            SetUpCrawlOfLinks(redirectingPage);
+            SetUpRedirect(redirectingPage, null);
+
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
+
+            Assert.IsFalse(result.ErrorOccurred);
+            _fakeHttpRequester.Verify(f => f.MakeRequestAsync(_rootUri, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()), Times.Once());
+            Assert.AreEqual(2, result.CrawlContext.CrawledCount);
+        }
+
+        [TestMethod]
+        public async Task Crawl_RootRedirectWithoutLocationHeader_KeepsTheRoot()
+        {
+            var root = new Uri("http://a.com/start");
+            SetUpCrawlOfLinks();
+            SetUpRedirect(root, null);
+
+            var result = await _unitUnderTest.CrawlAsync(root, TestContext.CancellationToken);
+
+            Assert.IsFalse(result.ErrorOccurred);
+            Assert.AreEqual(root, result.CrawlContext.RootUri);
+            Assert.AreEqual(root, result.CrawlContext.OriginalRootUri);
+        }
+
         //The root links to the given pages, which have no links themselves; every page is allowed and answers 200
         private void SetUpCrawlOfLinks(params Uri[] links)
         {
@@ -1203,7 +1233,7 @@ namespace Abot2.Tests.Unit.Crawler
                 .Returns<Uri, Func<CrawledPage, CrawlDecision>, CancellationToken>((uri, shouldDownloadContent, cancellationToken) => Task.FromResult(new CrawledPage(uri)));
         }
 
-        //The page answers 302 to the target, and the crawler follows redirects itself
+        //The page answers 302 to the target (no Location header if null), and the crawler follows redirects itself
         private void SetUpRedirect(Uri page, Uri target)
         {
             _dummyConfiguration.IsHttpRequestAutoRedirectsEnabled = false;

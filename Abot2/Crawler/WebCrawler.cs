@@ -898,6 +898,9 @@ namespace Abot2.Crawler
             if (crawledPage.RedirectPosition >= 20)
                 Log.Warning("Page [{0}] is part of a chain of 20 or more consecutive redirects, redirects for this chain will now be aborted.", crawledPage.Uri);
 
+            if (!HasRedirectTarget(crawledPage))
+                return;
+
             try
             {
                 var uri = ExtractRedirectUri(crawledPage);
@@ -1305,13 +1308,23 @@ namespace Abot2.Crawler
                 throw new ArgumentException("The crawled page must be the root page to be validated for redirection.");
             }
 
-            if (IsRedirect(crawledRootPage))
+            if (IsRedirect(crawledRootPage) && HasRedirectTarget(crawledRootPage))
             {
                 _crawlContext.RootUri = ExtractRedirectUri(crawledRootPage);
                 Log.Information("The root URI [{0}] was redirected to [{1}]. [{1}] is the new root.",
                     _crawlContext.OriginalRootUri,
                     _crawlContext.RootUri);
             }
+        }
+
+        //Without a Location header a manual redirect has nothing to follow; resolving the missing location would give the site's base uri
+        private bool HasRedirectTarget(CrawledPage crawledPage)
+        {
+            if (_crawlContext.CrawlConfiguration.IsHttpRequestAutoRedirectsEnabled || crawledPage.HttpResponseMessage?.Headers?.Location != null)
+                return true;
+
+            Log.Warning("Page [{0}] answered with a redirect but has no Location header, there is nothing to follow", crawledPage.Uri);
+            return false;
         }
 
         /// <summary>
