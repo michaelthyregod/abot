@@ -38,15 +38,44 @@ namespace Abot2.Crawler
         #region Constructors
 
         public PoliteWebCrawler()
-            : this(null, null, null, null, null, null, null, null, null)
+            : this((CrawlConfiguration)null)
         {
         }
 
         public PoliteWebCrawler(CrawlConfiguration crawlConfiguration)
-            : this(crawlConfiguration, null, null, null, null, null, null, null, null)
+            : this(crawlConfiguration, null, (IScheduler)null, null, null, null, null, null)
         {
         }
 
+        /// <summary>
+        /// Creates a crawler instance with custom settings or implementation. Passing in null for any param uses the default implementation.
+        /// Implementations passed in are owned by the caller, who must dispose them after this crawler; the ones created for null params are disposed with this crawler.
+        /// </summary>
+        /// <param name="crawlConfiguration">Configurable crawl values</param>
+        /// <param name="crawlDecisionMaker">Decides whether or not to crawl a page or that page's links</param>
+        /// <param name="scheduler">Decides what link should be crawled next</param>
+        /// <param name="pageRequester">Makes the raw http requests</param>
+        /// <param name="htmlParser">Parses a crawled page for it's hyperlinks</param>
+        /// <param name="memoryManager">Checks the memory usage of the host process</param>
+        /// <param name="domainRateLimiter">Keeps the minimum delay between requests to the same domain</param>
+        /// <param name="robotsDotTextFinder">Finds and parses the site's robots.txt file</param>
+        /// <param name="timeProvider">Clock for the crawl and the rate limiting; if null, the system clock (TimeProvider.System)</param>
+        public PoliteWebCrawler(
+            CrawlConfiguration crawlConfiguration,
+            ICrawlDecisionMaker crawlDecisionMaker,
+            IScheduler scheduler,
+            IPageRequester pageRequester,
+            IHtmlParser htmlParser,
+            IMemoryManager memoryManager,
+            IDomainRateLimiter domainRateLimiter,
+            IRobotsDotTextFinder robotsDotTextFinder,
+            TimeProvider timeProvider = null)
+            : base(crawlConfiguration, crawlDecisionMaker, scheduler, pageRequester, htmlParser, memoryManager, timeProvider)
+        {
+            InitializePoliteness(domainRateLimiter, robotsDotTextFinder, out _ownedDomainRateLimiter, out _ownedRobotsContentExtractor, out _ownedRobotsPageRequester);
+        }
+
+        [Obsolete("IThreadManager is no longer used to run pages. Use the constructor without it; CrawlConfiguration.MaxConcurrentThreads sets how many pages are processed at the same time.")]
         public PoliteWebCrawler(
             CrawlConfiguration crawlConfiguration,
             ICrawlDecisionMaker crawlDecisionMaker,
@@ -59,15 +88,24 @@ namespace Abot2.Crawler
             IRobotsDotTextFinder robotsDotTextFinder)
             : base(crawlConfiguration, crawlDecisionMaker, threadManager, scheduler, pageRequester, htmlParser, memoryManager)
         {
+            InitializePoliteness(domainRateLimiter, robotsDotTextFinder, out _ownedDomainRateLimiter, out _ownedRobotsContentExtractor, out _ownedRobotsPageRequester);
+        }
+
+        private void InitializePoliteness(IDomainRateLimiter domainRateLimiter, IRobotsDotTextFinder robotsDotTextFinder,
+            out DomainRateLimiter ownedDomainRateLimiter, out WebContentExtractor ownedRobotsContentExtractor, out PageRequester ownedRobotsPageRequester)
+        {
+            ownedDomainRateLimiter = null;
             if (domainRateLimiter == null)
-                domainRateLimiter = _ownedDomainRateLimiter = new DomainRateLimiter(_crawlContext.CrawlConfiguration.MinCrawlDelayPerDomainMilliSeconds);
+                domainRateLimiter = ownedDomainRateLimiter = new DomainRateLimiter(_crawlContext.CrawlConfiguration.MinCrawlDelayPerDomainMilliSeconds, TimeProvider);
             _domainRateLimiter = domainRateLimiter;
 
+            ownedRobotsContentExtractor = null;
+            ownedRobotsPageRequester = null;
             if (robotsDotTextFinder == null)
             {
-                _ownedRobotsContentExtractor = new WebContentExtractor();
-                _ownedRobotsPageRequester = new PageRequester(_crawlContext.CrawlConfiguration, _ownedRobotsContentExtractor);
-                robotsDotTextFinder = new RobotsDotTextFinder(_ownedRobotsPageRequester);
+                ownedRobotsContentExtractor = new WebContentExtractor();
+                ownedRobotsPageRequester = new PageRequester(_crawlContext.CrawlConfiguration, ownedRobotsContentExtractor, null, TimeProvider);
+                robotsDotTextFinder = new RobotsDotTextFinder(ownedRobotsPageRequester);
             }
             _robotsDotTextFinder = robotsDotTextFinder;
         }
@@ -92,7 +130,7 @@ namespace Abot2.Crawler
         #endregion
 
         /// <inheritdoc />
-        public override async Task<CrawlResult> CrawlAsync(Uri uri, CancellationTokenSource cancellationTokenSource)
+        public override async Task<CrawlResult> CrawlAsync(Uri uri, CancellationToken cancellationToken = default)
         {
             ThrowIfDisposed();
 
@@ -102,7 +140,7 @@ namespace Abot2.Crawler
             //Load robots.txt
             if (_crawlContext.CrawlConfiguration.IsRespectRobotsDotTextEnabled)
             {
-                _robotsDotText = await _robotsDotTextFinder.FindAsync(uri).ConfigureAwait(false);
+                _robotsDotText = await _robotsDotTextFinder.FindAsync(uri, cancellationToken).ConfigureAwait(false);
 
                 if (_robotsDotText != null)
                 {
@@ -128,7 +166,7 @@ namespace Abot2.Crawler
                 _domainRateLimiter.AddDomain(uri, robotsDotTextCrawlDelayInMillisecs);
             }
 
-            return await base.CrawlAsync(uri, cancellationTokenSource).ConfigureAwait(false);
+            return await base.CrawlAsync(uri, cancellationToken).ConfigureAwait(false);
         }
 
         /// <summary>

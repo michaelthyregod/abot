@@ -19,6 +19,11 @@ namespace Abot2.Tests.Unit
 
         public override long TimestampFrequency => TimeSpan.TicksPerSecond;
 
+        /// <summary>
+        /// Raised whenever a timer is scheduled, so a test can wait until the code under test has started waiting before it advances the clock
+        /// </summary>
+        public event Action TimerScheduled;
+
         public override long GetTimestamp()
         {
             lock (_lock)
@@ -104,8 +109,10 @@ namespace Abot2.Tests.Unit
                     DueTicks = _owner._ticks + dueTime.Ticks;
                     _periodTicks = period == Timeout.InfiniteTimeSpan ? 0 : period.Ticks;
                     _owner._scheduledTimers.Add(this);
-                    return true;
                 }
+
+                _owner.TimerScheduled?.Invoke();
+                return true;
             }
 
             //Called under the owner's lock when the timer fires: reschedules a periodic timer, unschedules a one-off

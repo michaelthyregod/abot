@@ -4,6 +4,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Serilog;
@@ -20,11 +21,11 @@ namespace Abot2.Tests.Integration
             _rootUri = rootUri;
         }
 
-        protected async Task CrawlAndAssert(IWebCrawler crawler)
+        protected async Task CrawlAndAssert(IWebCrawler crawler, CancellationToken cancellationToken)
         {
             crawler.PageCrawlCompleted += crawler_PageCrawlCompleted;
 
-            CrawlResult result = await crawler.CrawlAsync(_rootUri);
+            CrawlResult result = await crawler.CrawlAsync(_rootUri, cancellationToken);
 
             Assert.IsNull(result.ErrorException);
             Assert.IsFalse(result.ErrorOccurred);

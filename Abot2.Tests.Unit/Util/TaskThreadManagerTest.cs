@@ -3,6 +3,9 @@ using Abot2.Util;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Threading;
 
+//The thread managers are obsolete but still supported, so they keep their tests
+#pragma warning disable CS0618
+
 namespace Abot2.Tests.Unit.Util
 {
     [TestClass]

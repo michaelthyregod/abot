@@ -27,7 +27,7 @@ namespace Abot2.Tests.Integration
             {
                 IsExternalPageCrawlingEnabled = true
             };
-            await base.CrawlAndAssert(new PoliteWebCrawler(config));
+            await base.CrawlAndAssert(new PoliteWebCrawler(config), TestContext.CancellationToken);
         }
 
         [TestMethod]
@@ -41,10 +41,10 @@ namespace Abot2.Tests.Integration
 
             var pagesCrawledCount = 0;
 
-            var crawler = new PoliteWebCrawler(configuration, null, null, null, null, null, null, null, null);
+            var crawler = new PoliteWebCrawler(configuration);
             crawler.PageCrawlCompleted += (a, b) => Interlocked.Increment(ref pagesCrawledCount);
 
-            await crawler.CrawlAsync(SetupAssemblyInitializer.Site.BaseUri);
+            await crawler.CrawlAsync(SetupAssemblyInitializer.Site.BaseUri, TestContext.CancellationToken);
 
             Assert.AreEqual(5, pagesCrawledCount);
         }
@@ -57,10 +57,10 @@ namespace Abot2.Tests.Integration
 
             var pagesCrawledCount = 0;
 
-            var crawler = new PoliteWebCrawler(configuration, null, null, null, null, null, null, null, null);
+            var crawler = new PoliteWebCrawler(configuration);
             crawler.PageCrawlCompleted += (a, b) => Interlocked.Increment(ref pagesCrawledCount);
 
-            await crawler.CrawlAsync(SetupAssemblyInitializer.Site.BaseUri);
+            await crawler.CrawlAsync(SetupAssemblyInitializer.Site.BaseUri, TestContext.CancellationToken);
 
             Assert.AreEqual(25, pagesCrawledCount);
         }
@@ -74,10 +74,10 @@ namespace Abot2.Tests.Integration
 
             var pagesCrawledCount = 0;
 
-            var crawler = new PoliteWebCrawler(configuration, null, null, null, null, null, null, null, null);
+            var crawler = new PoliteWebCrawler(configuration);
             crawler.PageCrawlCompleted += (a, b) => Interlocked.Increment(ref pagesCrawledCount);
 
-            await crawler.CrawlAsync(SetupAssemblyInitializer.Site.BaseUri);
+            await crawler.CrawlAsync(SetupAssemblyInitializer.Site.BaseUri, TestContext.CancellationToken);
 
             Assert.AreEqual(5, pagesCrawledCount);
         }
@@ -97,7 +97,7 @@ namespace Abot2.Tests.Integration
                 var crawler = new TimeoutNotifyingCrawler(configuration, site.ReleaseResponses);
                 crawler.PageCrawlCompleted += (a, b) => Interlocked.Increment(ref pagesCrawledCount);
 
-                var result = await crawler.CrawlAsync(site.BaseUri);
+                var result = await crawler.CrawlAsync(site.BaseUri, TestContext.CancellationToken);
 
                 Assert.IsFalse(result.ErrorOccurred);
                 Assert.IsTrue(result.CrawlContext.IsCrawlHardStopRequested, "The crawl timeout should have stopped the crawl");
@@ -120,7 +120,7 @@ namespace Abot2.Tests.Integration
                 };
 
                 var crawler = new PoliteWebCrawler();
-                var result = await crawler.CrawlAsync(site.BaseUri, cancellationTokenSource);
+                var result = await crawler.CrawlAsync(site.BaseUri, cancellationTokenSource.Token);
 
                 Assert.IsTrue(result.ErrorOccurred);
                 Assert.IsTrue(result.ErrorException is OperationCanceledException);
@@ -142,7 +142,7 @@ namespace Abot2.Tests.Integration
                 };
 
                 var crawler = new PoliteWebCrawler();
-                var task = Task.Factory.StartNew<CrawlResult>( () => crawler.CrawlAsync(site.BaseUri, cancellationTokenSource).Result);
+                var task = Task.Factory.StartNew<CrawlResult>( () => crawler.CrawlAsync(site.BaseUri, cancellationTokenSource.Token).Result);
                 var result = task.Result;
 
                 Assert.IsTrue(result.ErrorOccurred);
@@ -162,7 +162,7 @@ namespace Abot2.Tests.Integration
                 var crawler = new PoliteWebCrawler(configuration);
                 crawler.PageCrawlCompleted += (s, e) => crawledPage = e.CrawledPage;
 
-                await crawler.CrawlAsync(site.BaseUri);
+                await crawler.CrawlAsync(site.BaseUri, TestContext.CancellationToken);
             }
 
             Assert.IsNotNull(crawledPage);
@@ -185,7 +185,7 @@ namespace Abot2.Tests.Integration
             var uriToCrawl = SetupAssemblyInitializer.Site.BaseUri;
             //A guaranteed minimum: rate limiting really waits. Stopwatch, unlike DateTime.Now, cannot jump
             var timer = System.Diagnostics.Stopwatch.StartNew();
-            await crawler.CrawlAsync(uriToCrawl);
+            await crawler.CrawlAsync(uriToCrawl, TestContext.CancellationToken);
             timer.Stop();
 
             Assert.IsGreaterThan(2000, timer.ElapsedMilliseconds);
@@ -202,7 +202,7 @@ namespace Abot2.Tests.Integration
                 IsExternalPageCrawlingEnabled = true
             };
 
-            await base.CrawlAndAssert(new PoliteWebCrawler(configuration));
+            await base.CrawlAndAssert(new PoliteWebCrawler(configuration), TestContext.CancellationToken);
         }
 
         private protected override List<PageResult> GetExpectedCrawlResult()

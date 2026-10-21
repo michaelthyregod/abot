@@ -4,6 +4,9 @@ using System;
 using System.Threading;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
+//The thread managers are obsolete but still supported, so they keep their tests
+#pragma warning disable CS0618
+
 namespace Abot2.Tests.Unit.Util
 {
     //Tests wait on signals instead of sleeping: work that must stay running waits on a gate the test opens,

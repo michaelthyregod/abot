@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Dynamic;
 using System.Reflection;
 using System.Threading;
@@ -72,11 +72,14 @@ namespace Abot2.Crawler
         /// <summary>
         /// Begins a crawl using the uri param
         /// </summary>
-        Task<CrawlResult> CrawlAsync(Uri uri);
+        /// <param name="uri">The root of the site to crawl</param>
+        /// <param name="cancellationToken">Cancels the crawl, including requests in progress. The result then reports an OperationCanceledException.</param>
+        Task<CrawlResult> CrawlAsync(Uri uri, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Begins a crawl using the uri param, and can be cancelled using the CancellationToken
         /// </summary>
+        [Obsolete("Use CrawlAsync(Uri, CancellationToken) and pass the token of the source.")]
         Task<CrawlResult> CrawlAsync(Uri uri, CancellationTokenSource tokenSource);
 
         /// <summary>
@@ -87,27 +90,46 @@ namespace Abot2.Crawler
 
     public abstract class WebCrawler : IWebCrawler
     {
-        protected bool _crawlComplete = false;
+        protected volatile bool _crawlComplete = false;
         protected bool _crawlStopReported = false;
         protected bool _crawlCancellationReported = false;
-        protected bool _maxPagesToCrawlLimitReachedOrScheduled = false;
+        protected volatile bool _maxPagesToCrawlLimitReachedOrScheduled = false;
+        [Obsolete("No longer used: the crawl timeout is a cancellation token created from the crawler's TimeProvider.")]
         protected Timer _timeoutTimer;
         protected CrawlResult _crawlResult = null;
         protected CrawlContext _crawlContext;
+        [Obsolete("No longer used: the crawler processes pages on its own async workers, limited by CrawlConfiguration.MaxConcurrentThreads. Holds the thread manager passed to the obsolete constructor, if any.")]
         protected IThreadManager _threadManager;
         protected IScheduler _scheduler;
         protected IPageRequester _pageRequester;
         protected IHtmlParser _htmlParser;
         protected ICrawlDecisionMaker _crawlDecisionMaker;
         protected IMemoryManager _memoryManager;
-        protected int _processingPageCount = 0;
-        private readonly object _processingPageCountLock = new object();
 
-        //Guards the MaxPagesToCrawl check, which reads CrawledCount + Scheduler.Count, against concurrent scheduling and dequeuing
-        private readonly object _scheduleLock = new object();
+        /// <summary>
+        /// Pages taken from the scheduler and not yet fully processed. Updated atomically.
+        /// </summary>
+        protected int _processingPageCount = 0;
+
+        private readonly TimeProvider _timeProvider;
+        private readonly int _maxConcurrentPages;
+
+        //Pages counted against MaxPagesToCrawl: crawled, scheduled, or reserved by a page being scheduled right now. Reserved atomically,
+        //so concurrent scheduling can never go over the limit, without a lock around the decision makers.
+        private int _reservedPageCount;
+
+        //Completed whenever there may be new work or the crawl state changed, then replaced. Workers wait on it instead of polling.
+        private TaskCompletionSource<bool> _workChanged = NewWorkChangedSignal();
+
+        //Cancelled by a hard stop or the crawl timeout, which also cancels requests in progress
+        [SuppressMessage("Usage", "CA2213:Disposable fields should be disposed", Justification = "Borrowed while a crawl runs; CrawlAsync owns it and disposes it in a using block")]
+        private CancellationTokenSource _stopCrawl;
+
+        private int _cancellationReported;
+        private CancellationToken _callerCancellationToken;
+        private int _stopReported;
 
         //What this instance created itself and therefore disposes. Anything passed in is owned by the caller.
-        private readonly bool _ownsThreadManager;
         private readonly bool _ownsScheduler;
         private readonly bool _ownsPageRequester;
         private readonly bool _ownsMemoryManager;
@@ -149,7 +171,7 @@ namespace Abot2.Crawler
         /// Creates a crawler instance with the default settings and implementations.
         /// </summary>
         public WebCrawler()
-            : this(new CrawlConfiguration(), null, null, null, null, null, null)
+            : this(new CrawlConfiguration(), null, (IScheduler)null, null, null, null)
         {
         }
 
@@ -157,14 +179,38 @@ namespace Abot2.Crawler
         /// Creates a crawler instance with custom settings or implementation. Passing in null for all params is the equivalent of the empty constructor.
         /// Implementations passed in are owned by the caller, who must dispose them after this crawler; the ones created for null params are disposed with this crawler.
         /// </summary>
-        /// <param name="threadManager">Distributes http requests over multiple threads</param>
+        /// <param name="crawlConfiguration">Configurable crawl values</param>
+        /// <param name="crawlDecisionMaker">Decides whether or not to crawl a page or that page's links</param>
+        /// <param name="scheduler">Decides what link should be crawled next</param>
+        /// <param name="pageRequester">Makes the raw http requests</param>
+        /// <param name="htmlParser">Parses a crawled page for it's hyperlinks</param>
+        /// <param name="memoryManager">Checks the memory usage of the host process</param>
+        /// <param name="timeProvider">Clock for the crawl: start time, request times, retry waits, the crawl timeout and the elapsed time; if null, the system clock (TimeProvider.System)</param>
+        protected WebCrawler(
+            CrawlConfiguration crawlConfiguration,
+            ICrawlDecisionMaker crawlDecisionMaker,
+            IScheduler scheduler,
+            IPageRequester pageRequester,
+            IHtmlParser htmlParser,
+            IMemoryManager memoryManager,
+            TimeProvider timeProvider = null)
+            : this(crawlConfiguration, crawlDecisionMaker, null, scheduler, pageRequester, htmlParser, memoryManager, timeProvider)
+        {
+        }
+
+        /// <summary>
+        /// Creates a crawler instance with custom settings or implementation. Passing in null for all params is the equivalent of the empty constructor.
+        /// Implementations passed in are owned by the caller, who must dispose them after this crawler; the ones created for null params are disposed with this crawler.
+        /// </summary>
+        /// <param name="threadManager">No longer used to run pages: the crawler processes pages on its own async workers. Its MaxThreads sets how many pages are processed at the same time.</param>
         /// <param name="scheduler">Decides what link should be crawled next</param>
         /// <param name="pageRequester">Makes the raw http requests</param>
         /// <param name="htmlParser">Parses a crawled page for it's hyperlinks</param>
         /// <param name="crawlDecisionMaker">Decides whether or not to crawl a page or that page's links</param>
         /// <param name="crawlConfiguration">Configurable crawl values</param>
         /// <param name="memoryManager">Checks the memory usage of the host process</param>
-        public WebCrawler(
+        [Obsolete("IThreadManager is no longer used to run pages. Use the constructor without it; CrawlConfiguration.MaxConcurrentThreads sets how many pages are processed at the same time.")]
+        protected WebCrawler(
             CrawlConfiguration crawlConfiguration,
             ICrawlDecisionMaker crawlDecisionMaker,
             IThreadManager threadManager,
@@ -172,6 +218,20 @@ namespace Abot2.Crawler
             IPageRequester pageRequester,
             IHtmlParser htmlParser,
             IMemoryManager memoryManager)
+            : this(crawlConfiguration, crawlDecisionMaker, threadManager?.MaxThreads, scheduler, pageRequester, htmlParser, memoryManager, null)
+        {
+            _threadManager = threadManager;
+        }
+
+        private WebCrawler(
+            CrawlConfiguration crawlConfiguration,
+            ICrawlDecisionMaker crawlDecisionMaker,
+            int? maxConcurrentPages,
+            IScheduler scheduler,
+            IPageRequester pageRequester,
+            IHtmlParser htmlParser,
+            IMemoryManager memoryManager,
+            TimeProvider timeProvider)
         {
             _crawlContext = new CrawlContext
             {
@@ -179,8 +239,8 @@ namespace Abot2.Crawler
             };
             CrawlBag = _crawlContext.CrawlBag;
 
-            _ownsThreadManager = threadManager == null;
-            _threadManager = threadManager ?? new TaskThreadManager(_crawlContext.CrawlConfiguration.MaxConcurrentThreads > 0 ? _crawlContext.CrawlConfiguration.MaxConcurrentThreads : Environment.ProcessorCount);
+            _timeProvider = timeProvider ?? TimeProvider.System;
+            _maxConcurrentPages = maxConcurrentPages ?? (_crawlContext.CrawlConfiguration.MaxConcurrentThreads > 0 ? _crawlContext.CrawlConfiguration.MaxConcurrentThreads : Environment.ProcessorCount);
 
             _ownsScheduler = scheduler == null;
             _scheduler = scheduler ?? new Scheduler(_crawlContext.CrawlConfiguration.IsUriRecrawlingEnabled, null, null);
@@ -189,7 +249,7 @@ namespace Abot2.Crawler
             if (pageRequester == null)
             {
                 _ownedContentExtractor = new WebContentExtractor();
-                pageRequester = new PageRequester(_crawlContext.CrawlConfiguration, _ownedContentExtractor);
+                pageRequester = new PageRequester(_crawlContext.CrawlConfiguration, _ownedContentExtractor, null, _timeProvider);
             }
             _pageRequester = pageRequester;
 
@@ -202,7 +262,7 @@ namespace Abot2.Crawler
                 if (memoryManager == null)
                 {
                     _ownedGcMemoryMonitor = new GcMemoryMonitor();
-                    _ownedCachedMemoryMonitor = new CachedMemoryMonitor(_ownedGcMemoryMonitor, _crawlContext.CrawlConfiguration.MaxMemoryUsageCacheTimeInSeconds);
+                    _ownedCachedMemoryMonitor = new CachedMemoryMonitor(_ownedGcMemoryMonitor, _crawlContext.CrawlConfiguration.MaxMemoryUsageCacheTimeInSeconds, _timeProvider);
                     memoryManager = new MemoryManager(_ownedCachedMemoryMonitor);
                 }
                 _memoryManager = memoryManager;
@@ -213,15 +273,24 @@ namespace Abot2.Crawler
             _crawlContext.Scheduler = _scheduler;
         }
 
+        /// <summary>
+        /// The clock the crawl uses
+        /// </summary>
+        protected TimeProvider TimeProvider => _timeProvider;
+
         #endregion Constructors
 
         #region Public Methods
 
         /// <inheritdoc />
-        public virtual Task<CrawlResult> CrawlAsync(Uri uri) => CrawlAsync(uri, null);
+        [Obsolete("Use CrawlAsync(Uri, CancellationToken) and pass the token of the source.")]
+        public virtual Task<CrawlResult> CrawlAsync(Uri uri, CancellationTokenSource cancellationTokenSource)
+        {
+            return CrawlAsync(uri, cancellationTokenSource?.Token ?? CancellationToken.None);
+        }
 
         /// <inheritdoc />
-        public virtual async Task<CrawlResult> CrawlAsync(Uri uri, CancellationTokenSource cancellationTokenSource)
+        public virtual async Task<CrawlResult> CrawlAsync(Uri uri, CancellationToken cancellationToken = default)
         {
             if (uri == null)
                 throw new ArgumentNullException(nameof(uri));
@@ -230,69 +299,77 @@ namespace Abot2.Crawler
 
             _crawlContext.RootUri = _crawlContext.OriginalRootUri = uri;
 
-            if (cancellationTokenSource != null)
-                _crawlContext.CancellationTokenSource = cancellationTokenSource;
-
             _crawlResult = new CrawlResult();
             _crawlResult.RootUri = _crawlContext.RootUri;
             _crawlResult.CrawlContext = _crawlContext;
             _crawlComplete = false;
+            _callerCancellationToken = cancellationToken;
+            Volatile.Write(ref _workChanged, NewWorkChangedSignal());
 
             Log.Information("About to crawl site [{0}]", uri.AbsoluteUri);
             PrintConfigValues(_crawlContext.CrawlConfiguration);
 
-            if (_memoryManager != null)
+            var memoryManager = _memoryManager;
+            if (memoryManager != null)
             {
-                _crawlContext.MemoryUsageBeforeCrawlInMb = _memoryManager.GetCurrentUsageInMb();
+                _crawlContext.MemoryUsageBeforeCrawlInMb = memoryManager.GetCurrentUsageInMb();
                 Log.Information("Starting memory usage for site [{0}] is [{1}mb]", uri.AbsoluteUri, _crawlContext.MemoryUsageBeforeCrawlInMb);
             }
 
-            _crawlContext.CrawlStartDate = DateTime.Now;
-            var timer = Stopwatch.StartNew();
+            _crawlContext.CrawlStartDate = Now();
+            var startTimestamp = _timeProvider.GetTimestamp();
 
-            if (_crawlContext.CrawlConfiguration.CrawlTimeoutSeconds > 0)
+            //The crawl token: cancelled by the caller or by a handler through CrawlContext.CancellationTokenSource, and reported as a cancellation.
+            //Work also stops on a hard stop or the crawl timeout, which are not errors.
+            using (var crawlCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            using (var stopCrawl = new CancellationTokenSource())
+            using (var workCancellation = CancellationTokenSource.CreateLinkedTokenSource(crawlCancellation.Token, stopCrawl.Token))
             {
-                _timeoutTimer?.Dispose();//from a previous crawl with this instance
-                _timeoutTimer = new Timer(_crawlContext.CrawlConfiguration.CrawlTimeoutSeconds * 1000);
-                _timeoutTimer.Elapsed += HandleCrawlTimeout;
-                _timeoutTimer.Start();
+                _crawlContext.CancellationTokenSource = crawlCancellation;
+                _stopCrawl = stopCrawl;
+                Interlocked.Exchange(ref _cancellationReported, 0);
+
+                CancellationTokenSource crawlTimeout = null;
+                var timeoutRegistration = default(CancellationTokenRegistration);
+                var cancellationRegistration = crawlCancellation.Token.Register(SignalWorkChanged);
+                try
+                {
+                    if (_crawlContext.CrawlConfiguration.CrawlTimeoutSeconds > 0)
+                    {
+                        crawlTimeout = TimeProviderWaits.CreateCancellationTokenSource(_timeProvider, TimeSpan.FromSeconds(_crawlContext.CrawlConfiguration.CrawlTimeoutSeconds));
+                        timeoutRegistration = crawlTimeout.Token.Register(OnCrawlTimeout);
+                    }
+
+                    _reservedPageCount = _crawlContext.CrawledCount + _scheduler.Count;
+
+                    ScheduleRootPage(new PageToCrawl(uri) { ParentUri = uri, IsInternal = true, IsRoot = true });
+
+                    VerifyRequiredAvailableMemory();
+                    await CrawlSite(workCancellation.Token).ConfigureAwait(false);
+                }
+                catch (Exception e)
+                {
+                    _crawlResult.ErrorException = e;
+                    Log.Fatal("An error occurred while crawling site [{0}]", uri);
+                    Log.Fatal(e, "Exception details -->");
+                }
+                finally
+                {
+                    timeoutRegistration.Dispose();
+                    cancellationRegistration.Dispose();
+                    crawlTimeout?.Dispose();
+                    _stopCrawl = null;
+                }
             }
 
-            try
+            memoryManager = _memoryManager;
+            if (memoryManager != null)
             {
-                var rootPage = new PageToCrawl(uri) { ParentUri = uri, IsInternal = true, IsRoot = true };
-                if (ShouldSchedulePageLink(rootPage))
-                    _scheduler.Add(rootPage);
-
-                VerifyRequiredAvailableMemory();
-                await CrawlSite();
-            }
-            catch (Exception e)
-            {
-                _crawlResult.ErrorException = e;
-                Log.Fatal("An error occurred while crawling site [{0}]", uri);
-                Log.Fatal(e, "Exception details -->");
-            }
-            finally
-            {
-                if (_ownsThreadManager)
-                    _threadManager?.Dispose();
-                else
-                    _threadManager?.AbortAll();
-            }
-
-            _timeoutTimer?.Stop();
-            _timeoutTimer?.Dispose();
-
-            timer.Stop();
-
-            if (_memoryManager != null)
-            {
-                _crawlContext.MemoryUsageAfterCrawlInMb = _memoryManager.GetCurrentUsageInMb();
+                _crawlContext.MemoryUsageAfterCrawlInMb = memoryManager.GetCurrentUsageInMb();
                 Log.Information("Ending memory usage for site [{0}] is [{1}mb]", uri.AbsoluteUri, _crawlContext.MemoryUsageAfterCrawlInMb);
             }
 
-            _crawlResult.Elapsed = timer.Elapsed;
+            _crawlResult.Elapsed = _timeProvider.GetElapsedTime(startTimestamp);
             Log.Information("Crawl complete for site [{0}]: Crawled [{1}] pages in [{2}]", _crawlResult.RootUri.AbsoluteUri, _crawlResult.CrawlContext.CrawledCount, _crawlResult.Elapsed);
 
             return _crawlResult;
@@ -317,13 +394,10 @@ namespace Abot2.Crawler
             if (!disposing)
                 return;
 
-            _timeoutTimer?.Dispose();
-
-            //Stop the crawl threads before disposing what they use
-            if (_ownsThreadManager)
-                _threadManager?.Dispose();
-            else
-                _threadManager?.AbortAll();
+            //Stop a crawl that is still running before disposing what it uses
+            _crawlContext.IsCrawlHardStopRequested = true;
+            CancelStopCrawl();
+            SignalWorkChanged();
 
             if (_ownsScheduler)
                 _scheduler?.Dispose();
@@ -420,70 +494,186 @@ namespace Abot2.Crawler
 
         #region Procected Async Methods
 
-        protected virtual async Task CrawlSite()
+        /// <summary>
+        /// Processes scheduled pages on async workers until nothing is scheduled or in progress, or the crawl is stopped.
+        /// At most MaxConcurrentThreads pages are processed at the same time, each until it is completely done.
+        /// </summary>
+        /// <param name="cancellationToken">Cancelled when the crawl is cancelled, hard stopped or times out</param>
+        protected virtual Task CrawlSite(CancellationToken cancellationToken)
         {
-            while (!_crawlComplete)
+            var workers = new Task[_maxConcurrentPages];
+            for (var i = 0; i < workers.Length; i++)
+                workers[i] = Task.Run(() => RunWorkerAsync(cancellationToken));
+
+            return Task.WhenAll(workers);
+        }
+
+        [Obsolete("Use CrawlSite(CancellationToken).")]
+        protected virtual Task CrawlSite()
+        {
+            return CrawlSite(_crawlContext.CancellationTokenSource.Token);
+        }
+
+        private async Task RunWorkerAsync(CancellationToken cancellationToken)
+        {
+            while (true)
             {
+                //Taken before looking for work, so a signal sent after the look is not missed
+                var workChanged = Volatile.Read(ref _workChanged).Task;
+
                 RunPreWorkChecks();
 
-                var linksToScheduleCount = _scheduler.Count;
-                if (linksToScheduleCount > 0)
-                {
-                    Log.Debug($"There are [{linksToScheduleCount}] links to schedule...");
-                    //DoWork takes an Action so this lambda is async void, an exception escaping it would crash the process
-                    //(the thread manager's own try/catch never sees it), so nothing may escape.
-                    _threadManager.DoWork(async () =>
-                    {
-                        try
-                        {
-                            await ProcessPage(GetNextPageToCrawl());
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            //Already logged by ProcessPage and reported on the crawl result by CheckForCancellationRequest()
-                        }
-                        catch (Exception e)
-                        {
-                            //ProcessPage handles its own errors, this catches the scheduler, AddPageToContext() and ProcessPage() overrides
-                            _crawlResult.ErrorException = e;
-                            Log.Fatal("Error occurred while getting or processing the next page for site [{0}]", _crawlContext.RootUri);
-                            Log.Fatal(e, "Exception details -->");
+                if (_crawlComplete)
+                    return;
 
-                            _crawlContext.IsCrawlHardStopRequested = true;
-                        }
-                    });
-                }
-                else if (!_threadManager.HasRunningThreads() && _processingPageCount < 1)//Ok that _processingPageCount could be a race condition, will be caught on the next loop iteration
+                var pageToCrawl = TakeNextPageToCrawl();
+                if (pageToCrawl != null)
                 {
-                    Log.Debug("No links to schedule, no threads/tasks in progress...");
+                    await ProcessTakenPageAsync(pageToCrawl, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                //Read the in-progress count first: a page only stops counting after it has scheduled its links
+                if (Volatile.Read(ref _processingPageCount) == 0 && (IsStopping || _scheduler.Count == 0))
+                {
                     _crawlComplete = true;
+                    SignalWorkChanged();
+                    return;
                 }
-                else
-                {
-                    Log.Debug("Waiting for links to be scheduled...");
 
-                    //Beware of issues here... https://github.com/sjdirect/abot/issues/203
-                    await Task.Delay(2500).ConfigureAwait(false);
+                await workChanged.ConfigureAwait(false);
+            }
+        }
+
+        //Counts the page as in progress before taking it, so the crawl cannot be seen as complete while a page is being taken
+        private PageToCrawl TakeNextPageToCrawl()
+        {
+            if (IsStopping)
+                return null;
+
+            Interlocked.Increment(ref _processingPageCount);
+            PageToCrawl pageToCrawl = null;
+            try
+            {
+                pageToCrawl = _scheduler.GetNext();
+                if (pageToCrawl != null)
+                    AddPageToContext(pageToCrawl);
+                return pageToCrawl;
+            }
+            catch (Exception e)
+            {
+                //A custom scheduler or AddPageToContext override that throws stops the crawl like any processing error
+                pageToCrawl = null;
+                ReportCrawlError(e, "Error occurred while getting the next page for site [{0}]");
+                return null;
+            }
+            finally
+            {
+                if (pageToCrawl == null)
+                {
+                    Interlocked.Decrement(ref _processingPageCount);
+                    SignalWorkChanged();
                 }
             }
         }
 
-        protected virtual async Task ProcessPage(PageToCrawl pageToCrawl)
+        private async Task ProcessTakenPageAsync(PageToCrawl pageToCrawl, CancellationToken cancellationToken)
         {
-            lock (_processingPageCountLock)
+            try
             {
-                _processingPageCount++;
-                Log.Debug($"Incrementing processingPageCount to [{_processingPageCount}]");
+                await ProcessPage(pageToCrawl, cancellationToken).ConfigureAwait(false);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                //A cancellation is reported on the crawl result by CheckForCancellationRequest(); a hard stop or timeout is not an error
+            }
+            catch (Exception e)
+            {
+                //ProcessPage handles its own errors, this catches ProcessPage() overrides
+                ReportCrawlError(e, "Error occurred while processing a page for site [{0}]");
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _processingPageCount);
+                SignalWorkChanged();
+            }
+        }
+
+        private void ReportCrawlError(Exception e, string message)
+        {
+            _crawlResult.ErrorException = e;
+            Log.Fatal(message, _crawlContext.RootUri);
+            Log.Fatal(e, "Exception details -->");
+
+            _crawlContext.IsCrawlHardStopRequested = true;
+        }
+
+        private bool IsStopping => _crawlContext.IsCrawlStopRequested || _crawlContext.IsCrawlHardStopRequested;
+
+        /// <summary>
+        /// Wakes the workers waiting for work, so they look again
+        /// </summary>
+        protected void SignalWorkChanged()
+        {
+            Interlocked.Exchange(ref _workChanged, NewWorkChangedSignal()).TrySetResult(true);
+        }
+
+        private static TaskCompletionSource<bool> NewWorkChangedSignal()
+        {
+            return new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+
+        private void OnCrawlTimeout()
+        {
+            //Runs on a timer thread, where an exception escaping would crash the process
+            try
+            {
+                HandleCrawlTimeout(null, null);
+            }
+            catch (Exception e)
+            {
+                Log.Error(e, "An exception was thrown while handling the crawl timeout");
+            }
+
+            SignalWorkChanged();
+        }
+
+        private void CancelCrawl()
+        {
+            try
+            {
+                _crawlContext.CancellationTokenSource.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                //The crawl has already ended
+            }
+        }
+
+        private void CancelStopCrawl()
+        {
+            try
+            {
+                Volatile.Read(ref _stopCrawl)?.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                //The crawl has already ended
+            }
+        }
+
+        /// <param name="pageToCrawl">The page to crawl and process</param>
+        /// <param name="cancellationToken">Cancelled when the crawl is cancelled, hard stopped or times out</param>
+        protected virtual async Task ProcessPage(PageToCrawl pageToCrawl, CancellationToken cancellationToken)
+        {
+            if (pageToCrawl == null)
+                return;
 
             try
             {
-                if (pageToCrawl == null)
-                    return;
-
                 ThrowIfCancellationRequested();
 
-                var crawledPage = await CrawlThePage(pageToCrawl).ConfigureAwait(false);
+                var crawledPage = await CrawlThePage(pageToCrawl, cancellationToken).ConfigureAwait(false);
 
                 // Validate the root uri in case of a redirection.
                 if (crawledPage.IsRoot)
@@ -514,6 +704,7 @@ namespace Abot2.Crawler
                 {
                     crawledPage.IsRetry = true;
                     _scheduler.Add(crawledPage);
+                    SignalWorkChanged();
                 }
             }
             catch (OperationCanceledException)
@@ -529,28 +720,29 @@ namespace Abot2.Crawler
 
                 _crawlContext.IsCrawlHardStopRequested = true;
             }
-            finally
-            {
-                lock (_processingPageCountLock)
-                {
-                    _processingPageCount--;
-                    Log.Debug($"Decrementing processingPageCount to [{_processingPageCount}]");
-                }
-            }
         }
 
-        protected virtual async Task<CrawledPage> CrawlThePage(PageToCrawl pageToCrawl)
+        [Obsolete("Use ProcessPage(PageToCrawl, CancellationToken).")]
+        protected virtual Task ProcessPage(PageToCrawl pageToCrawl)
+        {
+            return ProcessPage(pageToCrawl, _crawlContext.CancellationTokenSource.Token);
+        }
+
+        /// <param name="pageToCrawl">The page to request</param>
+        /// <param name="cancellationToken">Cancelled when the crawl is cancelled, hard stopped or times out</param>
+        protected virtual async Task<CrawledPage> CrawlThePage(PageToCrawl pageToCrawl, CancellationToken cancellationToken)
         {
             Log.Debug("About to crawl page [{0}]", pageToCrawl.Uri.AbsoluteUri);
             FirePageCrawlStartingEvent(pageToCrawl);
 
-            await BeforeRequestAsync(pageToCrawl, _crawlContext.CancellationTokenSource.Token).ConfigureAwait(false);
+            await BeforeRequestAsync(pageToCrawl, cancellationToken).ConfigureAwait(false);
 
-            if (pageToCrawl.IsRetry) { WaitMinimumRetryDelay(pageToCrawl); }
+            if (pageToCrawl.IsRetry)
+                await WaitMinimumRetryDelayAsync(pageToCrawl, cancellationToken).ConfigureAwait(false);
 
-            pageToCrawl.LastRequest = DateTime.Now;
+            pageToCrawl.LastRequest = Now();
 
-            var crawledPage = await _pageRequester.MakeRequestAsync(pageToCrawl.Uri, ShouldDownloadPageContent).ConfigureAwait(false);
+            var crawledPage = await _pageRequester.MakeRequestAsync(pageToCrawl.Uri, ShouldDownloadPageContent, cancellationToken).ConfigureAwait(false);
 
             Map(pageToCrawl, crawledPage);
 
@@ -560,6 +752,12 @@ namespace Abot2.Crawler
                 Log.Information("Page crawl complete, Status:[{0}] Url:[{1}] Elapsed:[{2}] Parent:[{3}] Retry:[{4}]", Convert.ToInt32(crawledPage.HttpResponseMessage.StatusCode), crawledPage.Uri.AbsoluteUri, crawledPage.Elapsed, crawledPage.ParentUri, crawledPage.RetryCount);
 
             return crawledPage;
+        }
+
+        [Obsolete("Use CrawlThePage(PageToCrawl, CancellationToken).")]
+        protected virtual Task<CrawledPage> CrawlThePage(PageToCrawl pageToCrawl)
+        {
+            return CrawlThePage(pageToCrawl, _crawlContext.CancellationTokenSource.Token);
         }
 
         /// <summary>
@@ -595,43 +793,57 @@ namespace Abot2.Crawler
 
         protected virtual void CheckMemoryUsage()
         {
-            if (_memoryManager == null
+            //A worker that finds the field cleared also sees the hard stop, which is set before the field is cleared
+            var memoryManager = Volatile.Read(ref _memoryManager);
+            if (memoryManager == null
                 || _crawlContext.IsCrawlHardStopRequested
                 || _crawlContext.CrawlConfiguration.MaxMemoryUsageInMb < 1)
                 return;
 
-            var currentMemoryUsage = _memoryManager.GetCurrentUsageInMb();
+            var currentMemoryUsage = memoryManager.GetCurrentUsageInMb();
             if (Log.IsEnabled(LogEventLevel.Debug))
                 Log.Debug("Current memory usage for site [{0}] is [{1}mb]", _crawlContext.RootUri, currentMemoryUsage);
 
-            if (currentMemoryUsage > _crawlContext.CrawlConfiguration.MaxMemoryUsageInMb)
+            if (currentMemoryUsage <= _crawlContext.CrawlConfiguration.MaxMemoryUsageInMb)
+                return;
+
+            //Stop before claiming the report, so no worker can take another page in between
+            _crawlContext.IsCrawlHardStopRequested = true;
+
+            //Of several workers seeing the limit exceeded, only the one that clears the field reports it
+            if (Interlocked.CompareExchange(ref _memoryManager, null, memoryManager) == memoryManager)
             {
                 //Stop the memory monitor now rather than when the crawler is disposed, but only if this instance owns it
                 if (_ownsMemoryManager)
                 {
-                    _memoryManager.Dispose();
+                    memoryManager.Dispose();
                     _ownedCachedMemoryMonitor?.Dispose();
                 }
-                _memoryManager = null;
 
                 var message = string.Format("Process is using [{0}mb] of memory which is above the max configured of [{1}mb] for site [{2}]. This is configurable through the maxMemoryUsageInMb in app.conf or CrawlConfiguration.MaxMemoryUsageInMb.", currentMemoryUsage, _crawlContext.CrawlConfiguration.MaxMemoryUsageInMb, _crawlContext.RootUri);
                 _crawlResult.ErrorException = new InsufficientMemoryException(message);
 
                 Log.Fatal(_crawlResult.ErrorException, "Exception details -->");
-                _crawlContext.IsCrawlHardStopRequested = true;
             }
         }
 
         protected virtual void CheckForCancellationRequest()
         {
+            //The caller's token reports a cancellation before its callbacks have cancelled the linked crawl token,
+            //so a crawl could otherwise finish its last page in between and end without seeing the cancellation
+            if (_callerCancellationToken.IsCancellationRequested)
+                CancelCrawl();
+
             if (_crawlContext.CancellationTokenSource.IsCancellationRequested)
             {
-                if (!_crawlCancellationReported)
+                //Stop before claiming the report, so no worker can take another page in between
+                _crawlContext.IsCrawlHardStopRequested = true;
+
+                if (Interlocked.Exchange(ref _cancellationReported, 1) == 0)
                 {
                     var message = string.Format("Crawl cancellation requested for site [{0}]!", _crawlContext.RootUri);
                     Log.Fatal(message);
                     _crawlResult.ErrorException = new OperationCanceledException(message, _crawlContext.CancellationTokenSource.Token);
-                    _crawlContext.IsCrawlHardStopRequested = true;
                     _crawlCancellationReported = true;
                 }
             }
@@ -641,15 +853,15 @@ namespace Abot2.Crawler
         {
             if (_crawlContext.IsCrawlHardStopRequested)
             {
-                if (!_crawlStopReported)
+                if (Interlocked.Exchange(ref _stopReported, 1) == 0)
                 {
                     Log.Information("Hard crawl stop requested for site [{0}]!", _crawlContext.RootUri);
                     _crawlStopReported = true;
                 }
 
+                //Cancels requests and waits in progress
+                CancelStopCrawl();
                 _scheduler.Clear();
-                _threadManager.AbortAll();
-                _scheduler.Clear();//to be sure nothing was scheduled since first call to clear()
 
                 //Set all events to null so no more events are fired
                 PageCrawlStarting = null;
@@ -663,7 +875,7 @@ namespace Abot2.Crawler
         {
             if (_crawlContext.IsCrawlStopRequested)
             {
-                if (!_crawlStopReported)
+                if (Interlocked.Exchange(ref _stopReported, 1) == 0)
                 {
                     Log.Information("Crawl stop requested for site [{0}]!", _crawlContext.RootUri);
                     _crawlStopReported = true;
@@ -701,14 +913,8 @@ namespace Abot2.Crawler
                 crawledPage.RedirectedTo = page;
                 Log.Debug("Page [{0}] is requesting that it be redirect to [{1}]", crawledPage.Uri, crawledPage.RedirectedTo.Uri);
 
-                lock (_scheduleLock)
-                {
-                    if (ShouldSchedulePageLink(page))
-                    {
-                        Log.Information("Page [{0}] will be redirect to [{1}]", crawledPage.Uri, crawledPage.RedirectedTo.Uri);
-                        _scheduler.Add(page);
-                    }
-                }
+                if ((_scheduler.AddKnownUri(page.Uri) || _crawlContext.CrawlConfiguration.IsUriRecrawlingEnabled) && ScheduleKnownPage(page))
+                    Log.Information("Page [{0}] will be redirect to [{1}]", crawledPage.Uri, crawledPage.RedirectedTo.Uri);
             }
             catch {}
         }
@@ -809,24 +1015,14 @@ namespace Abot2.Crawler
             }
             else
             {
-                // Look for the Retry-After header in the response.
+                // Look for the Retry-After header in the response: either a date or a number of seconds
                 crawledPage.RetryAfter = null;
 
-                var value = crawledPage.HttpResponseMessage?.Headers?.RetryAfter?.ToString();
-                if (!String.IsNullOrEmpty(value))
-                {
-                    // Try to convert to DateTime first, then in double.
-                    DateTime date;
-                    double seconds;
-                    if (crawledPage.LastRequest.HasValue && DateTime.TryParse(value, out date))
-                    {
-                        crawledPage.RetryAfter = (date - crawledPage.LastRequest.Value).TotalSeconds;
-                    }
-                    else if (double.TryParse(value, out seconds))
-                    {
-                        crawledPage.RetryAfter = seconds;
-                    }
-                }
+                var retryAfter = crawledPage.HttpResponseMessage?.Headers?.RetryAfter;
+                if (retryAfter?.Date != null && crawledPage.LastRequest.HasValue)
+                    crawledPage.RetryAfter = (retryAfter.Date.Value - new DateTimeOffset(crawledPage.LastRequest.Value)).TotalSeconds;
+                else if (retryAfter?.Delta != null)
+                    crawledPage.RetryAfter = retryAfter.Delta.Value.TotalSeconds;
             }
 
             SignalCrawlStopIfNeeded(shouldRecrawlPageDecision);
@@ -861,20 +1057,6 @@ namespace Abot2.Crawler
             return combinedBag;
         }
 
-        //Dequeues the page and counts it as crawled in one step, otherwise CrawledCount + Scheduler.Count briefly drops by one
-        //and a concurrent MaxPagesToCrawl check lets an extra page through
-        private PageToCrawl GetNextPageToCrawl()
-        {
-            lock (_scheduleLock)
-            {
-                var pageToCrawl = _scheduler.GetNext();
-                if (pageToCrawl != null)
-                    AddPageToContext(pageToCrawl);
-
-                return pageToCrawl;
-            }
-        }
-
         protected virtual void AddPageToContext(PageToCrawl pageToCrawl)
         {
             if (pageToCrawl.IsRetry)
@@ -897,34 +1079,25 @@ namespace Abot2.Crawler
             var linksToCrawl = 0;
             foreach (var hyperLink in crawledPage.ParsedLinks)
             {
-                // Checking that the link is new, validating it and marking it as known happen under one lock, so a link found
-                // on several pages crawled at the same time is validated once and its events fire once.
-                lock (_scheduleLock)
+                // Marking the link as known is atomic, so of several pages crawled at the same time that link to it, only the first evaluates it
+                // and its events fire once. A link is known from here on whatever the decision, so it is never evaluated again.
+                if (!_scheduler.AddKnownUri(hyperLink.HrefValue))
+                    continue;
+
+                if (ShouldScheduleLinkDecisionMaker == null || ShouldScheduleLinkDecisionMaker.Invoke(hyperLink.HrefValue, crawledPage, _crawlContext))
                 {
-                    if (_scheduler.IsUriKnown(hyperLink.HrefValue))
-                        continue;
-
-                    if (ShouldScheduleLinkDecisionMaker == null || ShouldScheduleLinkDecisionMaker.Invoke(hyperLink.HrefValue, crawledPage, _crawlContext))
+                    try //Added due to a bug in the Uri class related to this (http://stackoverflow.com/questions/2814951/system-uriformatexception-invalid-uri-the-hostname-could-not-be-parsed)
                     {
-                        try //Added due to a bug in the Uri class related to this (http://stackoverflow.com/questions/2814951/system-uriformatexception-invalid-uri-the-hostname-could-not-be-parsed)
-                        {
-                            var page = new PageToCrawl(hyperLink.HrefValue);
-                            page.ParentUri = crawledPage.Uri;
-                            page.CrawlDepth = crawledPage.CrawlDepth + 1;
-                            page.IsInternal = IsInternalUri(hyperLink.HrefValue);
-                            page.IsRoot = false;
+                        var page = new PageToCrawl(hyperLink.HrefValue);
+                        page.ParentUri = crawledPage.Uri;
+                        page.CrawlDepth = crawledPage.CrawlDepth + 1;
+                        page.IsInternal = IsInternalUri(hyperLink.HrefValue);
+                        page.IsRoot = false;
 
-                            if (ShouldSchedulePageLink(page))
-                            {
-                                _scheduler.Add(page);
-                                linksToCrawl++;
-                            }
-                        }
-                        catch { }
+                        if (ScheduleKnownPage(page))
+                            linksToCrawl++;
                     }
-
-                    // Add this link to the list of known Urls so validations are not duplicated in the future.
-                    _scheduler.AddKnownUri(hyperLink.HrefValue);
+                    catch { }
                 }
 
                 if (!ShouldScheduleMorePageLink(linksToCrawl))
@@ -933,6 +1106,74 @@ namespace Abot2.Crawler
                     break;
                 }
             }
+        }
+
+        //The root is always evaluated, even when its uri is already known, and then scheduled unless it is a duplicate.
+        //It is scheduled before any worker starts, so nothing runs concurrently with it.
+        private void ScheduleRootPage(PageToCrawl rootPage)
+        {
+            var countsTowardsLimit = _crawlContext.CrawlConfiguration.MaxPagesToCrawl > 0;
+            if (countsTowardsLimit && !TryReservePageSlot())
+                return;
+
+            var scheduled = false;
+            try
+            {
+                if (ShouldSchedulePageLink(rootPage)
+                    && (_scheduler.AddKnownUri(rootPage.Uri) || _crawlContext.CrawlConfiguration.IsUriRecrawlingEnabled))
+                {
+                    _scheduler.AddKnownPage(rootPage);
+                    scheduled = true;
+                }
+            }
+            finally
+            {
+                if (countsTowardsLimit && !scheduled)
+                    Interlocked.Decrement(ref _reservedPageCount);
+            }
+        }
+
+        /// <summary>
+        /// Schedules a page whose uri was marked as known, if the decision makers allow it and MaxPagesToCrawl has room.
+        /// The room is reserved atomically before the decision and released if the page is not scheduled.
+        /// </summary>
+        private bool ScheduleKnownPage(PageToCrawl page)
+        {
+            var countsTowardsLimit = !page.IsRetry && _crawlContext.CrawlConfiguration.MaxPagesToCrawl > 0;
+            if (countsTowardsLimit && !TryReservePageSlot())
+                return false;
+
+            var scheduled = false;
+            try
+            {
+                if (ShouldSchedulePageLink(page))
+                {
+                    _scheduler.AddKnownPage(page);
+                    scheduled = true;
+                    SignalWorkChanged();
+                }
+            }
+            finally
+            {
+                if (countsTowardsLimit && !scheduled)
+                    Interlocked.Decrement(ref _reservedPageCount);
+            }
+
+            return scheduled;
+        }
+
+        private bool TryReservePageSlot()
+        {
+            if (Interlocked.Increment(ref _reservedPageCount) <= _crawlContext.CrawlConfiguration.MaxPagesToCrawl)
+                return true;
+
+            Interlocked.Decrement(ref _reservedPageCount);
+            if (!_maxPagesToCrawlLimitReachedOrScheduled)
+            {
+                _maxPagesToCrawlLimitReachedOrScheduled = true;
+                Log.Information("MaxPagesToCrawlLimit has been reached or scheduled. No more pages will be scheduled.");
+            }
+            return false;
         }
 
         protected virtual bool ShouldSchedulePageLink(PageToCrawl page)
@@ -991,16 +1232,21 @@ namespace Abot2.Crawler
             }
         }
 
-        protected virtual void WaitMinimumRetryDelay(PageToCrawl pageToCrawl)
+        /// <summary>
+        /// Waits, without blocking a thread, until the page may be retried: until its Retry-After time if the server sent one, otherwise until
+        /// MinRetryDelayInMilliseconds after its last request
+        /// </summary>
+        /// <param name="pageToCrawl">The page about to be retried</param>
+        /// <param name="cancellationToken">Cancels the wait</param>
+        protected virtual Task WaitMinimumRetryDelayAsync(PageToCrawl pageToCrawl, CancellationToken cancellationToken)
         {
-            //TODO No unit tests cover these lines
             if (pageToCrawl.LastRequest == null)
             {
                 Log.Warning("pageToCrawl.LastRequest value is null for Url:{0}. Cannot retry without this value.", pageToCrawl.Uri.AbsoluteUri);
-                return;
+                return Task.CompletedTask;
             }
 
-            var milliSinceLastRequest = (DateTime.Now - pageToCrawl.LastRequest.Value).TotalMilliseconds;
+            var milliSinceLastRequest = (Now() - pageToCrawl.LastRequest.Value).TotalMilliseconds;
             double milliToWait;
             if (pageToCrawl.RetryAfter.HasValue)
             {
@@ -1009,7 +1255,8 @@ namespace Abot2.Crawler
             }
             else
             {
-                if (!(milliSinceLastRequest < _crawlContext.CrawlConfiguration.MinRetryDelayInMilliseconds)) return;
+                if (!(milliSinceLastRequest < _crawlContext.CrawlConfiguration.MinRetryDelayInMilliseconds))
+                    return Task.CompletedTask;
                 milliToWait = _crawlContext.CrawlConfiguration.MinRetryDelayInMilliseconds - milliSinceLastRequest;
             }
 
@@ -1019,9 +1266,23 @@ namespace Abot2.Crawler
                 pageToCrawl.LastRequest,
                 pageToCrawl.LastRequest.Value.AddMilliseconds(_crawlContext.CrawlConfiguration.MinRetryDelayInMilliseconds));
 
-            //TODO Cannot use RateLimiter since it currently cannot handle dynamic sleep times so using Thread.Sleep in the meantime
-            if (milliToWait > 0)
-                Thread.Sleep(TimeSpan.FromMilliseconds(milliToWait));
+            return milliToWait > 0
+                ? TimeProviderWaits.Delay(_timeProvider, TimeSpan.FromMilliseconds(milliToWait), cancellationToken)
+                : Task.CompletedTask;
+        }
+
+        [Obsolete("Blocks the calling thread while it waits. Use WaitMinimumRetryDelayAsync.")]
+        protected virtual void WaitMinimumRetryDelay(PageToCrawl pageToCrawl)
+        {
+            WaitMinimumRetryDelayAsync(pageToCrawl, CancellationToken.None).GetAwaiter().GetResult();
+        }
+
+        /// <summary>
+        /// The current local time on the crawler's clock
+        /// </summary>
+        protected DateTime Now()
+        {
+            return DateTime.SpecifyKind(_timeProvider.GetLocalNow().DateTime, DateTimeKind.Local);
         }
 
         /// <summary>

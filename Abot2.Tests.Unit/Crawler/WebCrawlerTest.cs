@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
 using CrawlDecision = Abot2.Poco.CrawlDecision;
@@ -28,7 +29,6 @@ namespace Abot2.Tests.Unit.Crawler
         Mock<IRobotsDotTextFinder> _fakeRobotsDotTextFinder;
         
         Scheduler _dummyScheduler;
-        TaskThreadManager _dummyThreadManager;
         CrawlConfiguration _dummyConfiguration;
         Uri _rootUri;
 
@@ -46,11 +46,10 @@ namespace Abot2.Tests.Unit.Crawler
 
 
             _dummyScheduler = new Scheduler();
-            _dummyThreadManager = new TaskThreadManager(10);
             _dummyConfiguration = new CrawlConfiguration();
             _dummyConfiguration.ConfigurationExtensions.Add("somekey", "someval");
 
-            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyThreadManager, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
+            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
             _unitUnderTest.CrawlBag.SomeVal = "SomeVal";
             _unitUnderTest.CrawlBag.SomeList = new List<string>() { "a", "b" };
             _rootUri = new Uri("http://a.com/");
@@ -67,7 +66,7 @@ namespace Abot2.Tests.Unit.Crawler
         public void Constructor_ConfigValueMaxConcurrentThreadsIsZero_DoesNotThrowException()
         {
             _dummyConfiguration.MaxConcurrentThreads = 0;
-            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, null, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
+            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
         }
 
         [TestMethod]
@@ -101,7 +100,7 @@ namespace Abot2.Tests.Unit.Crawler
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPageLinks(It.Is<CrawledPage>(p => p.Uri == homePage.Uri), It.IsAny<CrawlContext>())).Returns(new CrawlDecision{ Allow = true });
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldRecrawlPage(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = false });
 
-            await _unitUnderTest.CrawlAsync(_rootUri);
+            await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             _fakeHttpRequester.Verify(f => f.MakeRequestAsync(_rootUri, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()), Times.Once());
             _fakeHttpRequester.Verify(f => f.MakeRequestAsync(uri1, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()), Times.Once());
@@ -118,7 +117,7 @@ namespace Abot2.Tests.Unit.Crawler
         [TestMethod]
         public async Task Crawl_NullUri_ThrowsException()
         {
-            await Assert.ThrowsExactlyAsync<ArgumentNullException>(() => _unitUnderTest.CrawlAsync(null));
+            await Assert.ThrowsExactlyAsync<ArgumentNullException>(() => _unitUnderTest.CrawlAsync(null, TestContext.CancellationToken));
         }
 
         [TestMethod]
@@ -128,9 +127,9 @@ namespace Abot2.Tests.Unit.Crawler
             var ex = new Exception("oh no");
             fakeScheduler.Setup(f => f.Count).Throws(ex);
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
-            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyThreadManager, fakeScheduler.Object, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
+            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, fakeScheduler.Object, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
 
-            var result = await _unitUnderTest.CrawlAsync(_rootUri);
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             fakeScheduler.Verify(f => f.Count, Times.Exactly(1));
             Assert.IsTrue(result.ErrorOccurred);
@@ -140,12 +139,12 @@ namespace Abot2.Tests.Unit.Crawler
         [TestMethod]
         public async Task Crawl_ExceptionThrownByFirstShouldSchedulePageLink_SetsCrawlResultError()
         {
-            _dummyThreadManager = new TaskThreadManager(1);
-            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyThreadManager, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
+            _dummyConfiguration.MaxConcurrentThreads = 1;
+            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
             var ex = new Exception("oh no");
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Throws(ex);
 
-            var result = await _unitUnderTest.CrawlAsync(_rootUri);
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             _fakeCrawlDecisionMaker.Verify(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>()), Times.Exactly(1));
             Assert.IsTrue(result.ErrorOccurred);
@@ -158,13 +157,13 @@ namespace Abot2.Tests.Unit.Crawler
         [TestMethod]
         public async Task Crawl_SingleThread_ExceptionThrownDuringProcessPage_SetsCrawlResultError()
         {
-            _dummyThreadManager = new TaskThreadManager(1);
-            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyThreadManager, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
+            _dummyConfiguration.MaxConcurrentThreads = 1;
+            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
             var ex = new Exception("oh no");
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
             _fakeHttpRequester.Setup(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Throws(ex);
 
-            var result = await _unitUnderTest.CrawlAsync(_rootUri);
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             _fakeCrawlDecisionMaker.Verify(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>()), Times.Exactly(1));
             _fakeHttpRequester.Verify(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()), Times.Exactly(1));
@@ -183,7 +182,7 @@ namespace Abot2.Tests.Unit.Crawler
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
             _fakeHttpRequester.Setup(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Throws(ex);
 
-            var result = await _unitUnderTest.CrawlAsync(_rootUri);
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             _fakeCrawlDecisionMaker.Verify(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>()), Times.Exactly(1));
             _fakeHttpRequester.Verify(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()), Times.Exactly(1));
@@ -203,9 +202,9 @@ namespace Abot2.Tests.Unit.Crawler
             fakeScheduler.Setup(f => f.Count).Returns(() => Volatile.Read(ref getNextCalled) ? 0 : 1);
             fakeScheduler.Setup(f => f.GetNext()).Callback(() => Volatile.Write(ref getNextCalled, true)).Throws(ex);
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
-            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyThreadManager, fakeScheduler.Object, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
+            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, fakeScheduler.Object, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
 
-            var result = await _unitUnderTest.CrawlAsync(_rootUri);
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             _fakeHttpRequester.Verify(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()), Times.Never());
             Assert.IsTrue(result.ErrorOccurred);
@@ -218,9 +217,9 @@ namespace Abot2.Tests.Unit.Crawler
         {
             var ex = new Exception("oh no");
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
-            _unitUnderTest = new AddPageToContextThrowsCrawler(ex, _dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyThreadManager, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
+            _unitUnderTest = new AddPageToContextThrowsCrawler(ex, _dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
 
-            var result = await _unitUnderTest.CrawlAsync(_rootUri);
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             _fakeHttpRequester.Verify(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()), Times.Never());
             Assert.IsTrue(result.ErrorOccurred);
@@ -233,8 +232,8 @@ namespace Abot2.Tests.Unit.Crawler
         {
             readonly Exception _exception;
 
-            public AddPageToContextThrowsCrawler(Exception exception, CrawlConfiguration crawlConfiguration, ICrawlDecisionMaker crawlDecisionMaker, IThreadManager threadManager, IScheduler scheduler, IPageRequester pageRequester, IHtmlParser htmlParser, IMemoryManager memoryManager, IDomainRateLimiter domainRateLimiter, IRobotsDotTextFinder robotsDotTextFinder)
-                : base(crawlConfiguration, crawlDecisionMaker, threadManager, scheduler, pageRequester, htmlParser, memoryManager, domainRateLimiter, robotsDotTextFinder)
+            public AddPageToContextThrowsCrawler(Exception exception, CrawlConfiguration crawlConfiguration, ICrawlDecisionMaker crawlDecisionMaker, IScheduler scheduler, IPageRequester pageRequester, IHtmlParser htmlParser, IMemoryManager memoryManager, IDomainRateLimiter domainRateLimiter, IRobotsDotTextFinder robotsDotTextFinder)
+                : base(crawlConfiguration, crawlDecisionMaker, scheduler, pageRequester, htmlParser, memoryManager, domainRateLimiter, robotsDotTextFinder)
             {
                 _exception = exception;
             }
@@ -264,7 +263,7 @@ namespace Abot2.Tests.Unit.Crawler
             _unitUnderTest.PageCrawlDisallowed += (s, e) => ++pageCrawlDisallowedCount;
             _unitUnderTest.PageLinksCrawlDisallowed += (s, e) => ++pageLinksCrawlDisallowedCount;
 
-            await _unitUnderTest.CrawlAsync(_rootUri);
+            await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             _fakeHttpRequester.Verify(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()), Times.Once());
             _fakeHtmlParser.Verify(f => f.GetLinks(It.IsAny<CrawledPage>()), Times.Once());
@@ -294,7 +293,7 @@ namespace Abot2.Tests.Unit.Crawler
             _unitUnderTest.PageCrawlDisallowed += (s, e) => ++pageCrawlDisallowedCount;
             _unitUnderTest.PageLinksCrawlDisallowed += (s, e) => ++pageLinksCrawlDisallowedCount;
 
-            await _unitUnderTest.CrawlAsync(_rootUri);
+            await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             _fakeHttpRequester.Verify(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()), Times.Once());
             _fakeHtmlParser.Verify(f => f.GetLinks(It.IsAny<CrawledPage>()), Times.Never());
@@ -321,7 +320,7 @@ namespace Abot2.Tests.Unit.Crawler
             _unitUnderTest.PageCrawlDisallowed += (s, e) => ++pageCrawlDisallowedCount;
             _unitUnderTest.PageLinksCrawlDisallowed += (s, e) => ++pageLinksCrawlDisallowedCount;
 
-            await _unitUnderTest.CrawlAsync(_rootUri);
+            await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             _fakeHttpRequester.Verify(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<CancellationToken>()), Times.Never());
             _fakeHtmlParser.Verify(f => f.GetLinks(It.IsAny<CrawledPage>()), Times.Never());
@@ -355,7 +354,7 @@ namespace Abot2.Tests.Unit.Crawler
             _unitUnderTest.PageCrawlDisallowed += (s, e) => ++pageCrawlDisallowedCount;
             _unitUnderTest.PageLinksCrawlDisallowed += (s, e) => ++pageLinksCrawlDisallowedCount;
 
-            var result = await _unitUnderTest.CrawlAsync(_rootUri);
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             _fakeHttpRequester.Verify(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()), Times.Once());
             _fakeHtmlParser.Verify(f => f.GetLinks(It.IsAny<CrawledPage>()), Times.Once());
@@ -386,7 +385,7 @@ namespace Abot2.Tests.Unit.Crawler
             _unitUnderTest.PageCrawlDisallowed += ThrowExceptionWhen_PageCrawlDisallowed;
             _unitUnderTest.PageLinksCrawlDisallowed += ThrowExceptionWhen_PageLinksCrawlDisallowed;
 
-            var result = await _unitUnderTest.CrawlAsync(_rootUri);
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             _fakeCrawlDecisionMaker.Verify(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>()), Times.Once());
 
@@ -416,7 +415,7 @@ namespace Abot2.Tests.Unit.Crawler
             _unitUnderTest.PageLinksCrawlDisallowed += (s, e) => ++pageLinksCrawlDisallowedCount;
             _unitUnderTest.PageLinksCrawlDisallowed += ThrowExceptionWhen_PageLinksCrawlDisallowed;
 
-            var result = await _unitUnderTest.CrawlAsync(_rootUri);
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             _fakeHttpRequester.Verify(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()), Times.Once());
             _fakeHtmlParser.Verify(f => f.GetLinks(It.IsAny<CrawledPage>()), Times.Never());
@@ -445,7 +444,7 @@ namespace Abot2.Tests.Unit.Crawler
                 _unitUnderTest.PageCrawlStarting += (sender, args) => handler.Handle();
 
                 //Run the crawl on another thread, as some events fire inside CrawlAsync itself
-                var crawl = Task.Run(() => _unitUnderTest.CrawlAsync(_rootUri));
+                var crawl = Task.Run(() => _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken));
 
                 //While the handler is held, a crawler that waits for its handlers cannot have finished
                 handler.WaitUntilBlocked();
@@ -462,8 +461,8 @@ namespace Abot2.Tests.Unit.Crawler
         [TestMethod]
         public async Task Crawl_PageCrawlCompletedEvent_IsSynchronous()
         {
-            _dummyThreadManager = new TaskThreadManager(1);
-            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyThreadManager, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
+            _dummyConfiguration.MaxConcurrentThreads = 1;
+            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
 
             _fakeHttpRequester.Setup(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(new CrawledPage(_rootUri)));
             _fakeHtmlParser.Setup(f => f.GetLinks(It.Is<CrawledPage>(p => p.Uri == _rootUri))).Returns(new List<HyperLink>(){
@@ -480,7 +479,7 @@ namespace Abot2.Tests.Unit.Crawler
                 _unitUnderTest.PageCrawlCompleted += (sender, args) => handler.Handle();
 
                 //Run the crawl on another thread, as some events fire inside CrawlAsync itself
-                var crawl = Task.Run(() => _unitUnderTest.CrawlAsync(_rootUri));
+                var crawl = Task.Run(() => _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken));
 
                 //While the handler is held, a crawler that waits for its handlers cannot have finished
                 handler.WaitUntilBlocked();
@@ -506,7 +505,7 @@ namespace Abot2.Tests.Unit.Crawler
                 _unitUnderTest.PageCrawlDisallowed += (sender, args) => handler.Handle();
 
                 //Run the crawl on another thread, as some events fire inside CrawlAsync itself
-                var crawl = Task.Run(() => _unitUnderTest.CrawlAsync(_rootUri));
+                var crawl = Task.Run(() => _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken));
 
                 //While the handler is held, a crawler that waits for its handlers cannot have finished
                 handler.WaitUntilBlocked();
@@ -534,7 +533,7 @@ namespace Abot2.Tests.Unit.Crawler
                 _unitUnderTest.PageCrawlCompleted += (sender, args) => Interlocked.Increment(ref completedEvents);
 
                 //Run the crawl on another thread, as some events fire inside CrawlAsync itself
-                var crawl = Task.Run(() => _unitUnderTest.CrawlAsync(_rootUri));
+                var crawl = Task.Run(() => _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken));
 
                 //While the handler is held, a crawler that waits for its handlers cannot have finished
                 handler.WaitUntilBlocked();
@@ -599,7 +598,7 @@ namespace Abot2.Tests.Unit.Crawler
             };
 
             //Act
-            await _unitUnderTest.CrawlAsync(_rootUri);
+            await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             //Assert
             _fakeHttpRequester.Verify(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()), Times.Once());
@@ -636,7 +635,7 @@ namespace Abot2.Tests.Unit.Crawler
                 return new CrawlDecision { Allow = false, Reason = "aaa" };
             };
 
-            await _unitUnderTest.CrawlAsync(_rootUri);
+            await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             _fakeCrawlDecisionMaker.Verify(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>()), Times.Once());
 
@@ -659,7 +658,7 @@ namespace Abot2.Tests.Unit.Crawler
 
             _unitUnderTest.RobotsDotTextParseCompleted += (s, e) => ++pageRobotsTxtCompleted;
 
-            await _unitUnderTest.CrawlAsync(_rootUri);
+            await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             Assert.AreEqual(1, pageRobotsTxtCompleted);
         }
@@ -683,7 +682,7 @@ namespace Abot2.Tests.Unit.Crawler
 
             _unitUnderTest.ShouldCrawlPageLinksDecisionMaker = ((x, y) => new CrawlDecision { Allow = false, Reason = "aaa" });
 
-            await _unitUnderTest.CrawlAsync(_rootUri);
+            await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             _fakeHttpRequester.Verify(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()), Times.Once());
             _fakeHtmlParser.Verify(f => f.GetLinks(It.IsAny<CrawledPage>()), Times.Never());
@@ -704,7 +703,7 @@ namespace Abot2.Tests.Unit.Crawler
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPageLinks(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
 
-            var result = await _unitUnderTest.CrawlAsync(_rootUri);
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             _fakeHttpRequester.Verify(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()), Times.Once());
             _fakeHtmlParser.Verify(f => f.GetLinks(It.IsAny<CrawledPage>()), Times.Once());
@@ -732,7 +731,7 @@ namespace Abot2.Tests.Unit.Crawler
             };
 
             //Act
-            var result = await _unitUnderTest.CrawlAsync(_rootUri);
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             //Assert
             _fakeCrawlDecisionMaker.Verify(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>()), Times.Exactly(1));
@@ -760,7 +759,7 @@ namespace Abot2.Tests.Unit.Crawler
             };
 
             //Act
-            var result = await _unitUnderTest.CrawlAsync(_rootUri);
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             //Assert
             _fakeCrawlDecisionMaker.Verify(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>()), Times.Exactly(1));
@@ -794,7 +793,7 @@ namespace Abot2.Tests.Unit.Crawler
                 .Returns(new CrawlDecision { Allow = true });
 
             //Act
-            var result = await _unitUnderTest.CrawlAsync(_rootUri, cancellationTokenSource);
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, cancellationTokenSource.Token);
 
             //Assert
             _fakeCrawlDecisionMaker.Verify(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>()), Times.Exactly(1));
@@ -823,7 +822,7 @@ namespace Abot2.Tests.Unit.Crawler
             .Returns(new CrawlDecision { Allow = false, Reason = "Should have timed out so this crawl decision doesn't matter." });
 
             //Act
-            var result = await _unitUnderTest.CrawlAsync(_rootUri, cancellationTokenSource);
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, cancellationTokenSource.Token);
 
             //Assert
             Assert.AreEqual(0, _dummyScheduler.Count);
@@ -837,7 +836,7 @@ namespace Abot2.Tests.Unit.Crawler
         public async Task Crawl_OverCrawlTimeoutSeconds_CrawlIsStoppedBeforeCompletion()
         {
             _dummyConfiguration.CrawlTimeoutSeconds = 1;
-            var crawler = new TimeoutSignallingCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyThreadManager, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
+            var crawler = new TimeoutSignallingCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
             _unitUnderTest = crawler;
 
             var pageToReturn = new PageToCrawl(_rootUri);
@@ -853,7 +852,7 @@ namespace Abot2.Tests.Unit.Crawler
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPageLinks(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = false });
             _fakeHttpRequester.Setup(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(crawledPage));
 
-            var result = await _unitUnderTest.CrawlAsync(_rootUri);
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             _fakeCrawlDecisionMaker.Verify(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>()), Times.Exactly(1));
             Assert.AreEqual(0, _dummyScheduler.Count);
@@ -873,7 +872,7 @@ namespace Abot2.Tests.Unit.Crawler
 
             _unitUnderTest.PageCrawlCompleted += (s, e) => actualCrawlContext = e.CrawlContext;
 
-            await _unitUnderTest.CrawlAsync(_rootUri);
+            await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             _fakeHttpRequester.Verify(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()), Times.Once());
             _fakeHtmlParser.Verify(f => f.GetLinks(It.IsAny<CrawledPage>()), Times.Once());
@@ -889,10 +888,10 @@ namespace Abot2.Tests.Unit.Crawler
         {
             _dummyConfiguration.MinAvailableMemoryRequiredInMb = int.MaxValue;
             _fakeMemoryManager.Setup(f => f.IsSpaceAvailable(It.IsAny<int>())).Returns(false);
-            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyThreadManager, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
+            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
 
-            var result = await _unitUnderTest.CrawlAsync(_rootUri);
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             Assert.AreEqual(1, _dummyScheduler.Count);//no need to clear the scheduler since the crawl was never started
             Assert.IsTrue(result.ErrorOccurred);
@@ -905,12 +904,14 @@ namespace Abot2.Tests.Unit.Crawler
         [TestMethod]
         public async Task Crawl_CrawlHasExceededMaxMemoryUsageInMb_CrawlIsStoppedBeforeCompletion()
         {
+            //One worker, so memory is read exactly once before the first page would be taken
+            _dummyConfiguration.MaxConcurrentThreads = 1;
             _dummyConfiguration.MaxMemoryUsageInMb = 1;
             _fakeMemoryManager.Setup(f => f.GetCurrentUsageInMb()).Returns(2);
-            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyThreadManager, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
+            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
 
-            var result = await _unitUnderTest.CrawlAsync(_rootUri);
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             _fakeMemoryManager.Verify(f => f.GetCurrentUsageInMb(), Times.Exactly(2));
 
@@ -949,7 +950,7 @@ namespace Abot2.Tests.Unit.Crawler
                 _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPageLinks(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
                 _fakeCrawlDecisionMaker.Setup(f => f.ShouldRecrawlPage(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = false });
 
-                await _unitUnderTest.CrawlAsync(_rootUri);
+                await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
                 _fakeCrawlDecisionMaker.Verify(f => f.ShouldCrawlPage(It.Is<PageToCrawl>(p => p.Uri == sharedLink), It.IsAny<CrawlContext>()), Times.Once());
             }
@@ -981,8 +982,8 @@ namespace Abot2.Tests.Unit.Crawler
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.Is<PageToCrawl>(p => p.Uri == fakeLink3), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = false });
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPageLinks(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision {Allow = true});
 
-            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyThreadManager, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
-            await _unitUnderTest.CrawlAsync(_rootUri);
+            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
+            await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             // The links should be checked only one time, so ShouldCrawlPage should be called only 4 times.
             _fakeCrawlDecisionMaker.Verify(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>()), Times.Exactly(4));
@@ -998,45 +999,22 @@ namespace Abot2.Tests.Unit.Crawler
         [TestMethod]
         public async Task Crawl_CanExtractRetryAfterTimeFromHeaders()
         {
-            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyThreadManager, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
-            _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
-            _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPageLinks(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = false });
-            _fakeCrawlDecisionMaker.SetupSequence(f => f.ShouldRecrawlPage(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>()))
-                .Returns(new CrawlDecision { Allow = true })
-                .Returns(new CrawlDecision { Allow = false });
-            _fakeHtmlParser.Setup(f => f.GetLinks(It.IsAny<CrawledPage>())).Returns(new List<HyperLink>());
-
-            var httpRequestMessage = new HttpRequestMessage() {RequestUri = new Uri("http://a.com")};
-            var httpResponseMessage = new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
-            {
-                RequestMessage = httpRequestMessage
-            };
-            httpResponseMessage.Headers.Add("Retry-After", "1");
-            var page = new CrawledPage(_rootUri)
-            {
-                HttpRequestException = new HttpRequestException("aaa"),
-                HttpRequestMessage = httpRequestMessage,
-                HttpResponseMessage = httpResponseMessage
-            };
-            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(page));
-
-            var watch = new Stopwatch();
-            watch.Start();
-            await _unitUnderTest.CrawlAsync(_rootUri);
-            watch.Stop();
-
-            Assert.IsGreaterThan(2000, watch.ElapsedMilliseconds);
-            Assert.AreEqual(1.0, page.RetryAfter);
-            _fakeCrawlDecisionMaker.Verify(f => f.ShouldRecrawlPage(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>()), Times.Exactly(2));
+            await AssertRetryWaitsForRetryAfter(time => new RetryConditionHeaderValue(TimeSpan.FromSeconds(1)), 1000);
         }
 
         [TestMethod]
-        //TEMPORARY: compares a Retry-After date built from DateTime.Now with the crawler's own DateTime.Now, so a thread pool
-        //delay of a few seconds while other tests run makes it fail. Runs on its own until the crawler's clock can be replaced in tests.
-        [DoNotParallelize]
         public async Task Crawl_CanExtractRetryAfterDateFromHeaders()
         {
-            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyThreadManager, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
+            //A date three seconds after the request, on the crawler's clock
+            await AssertRetryWaitsForRetryAfter(time => new RetryConditionHeaderValue(time.GetUtcNow().AddSeconds(3)), 3000);
+        }
+
+        //The first request answers 503 with the given Retry-After; the retry must still be waiting 1 ms before the expected time and happen at it.
+        //Runs on a manual clock, so the result does not depend on how long anything takes.
+        private async Task AssertRetryWaitsForRetryAfter(Func<ManualTimeProvider, RetryConditionHeaderValue> retryAfter, int expectedWaitInMilliseconds)
+        {
+            var time = new ManualTimeProvider();
+            _unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object, time);
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
             _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPageLinks(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = false });
             _fakeCrawlDecisionMaker.SetupSequence(f => f.ShouldRecrawlPage(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>()))
@@ -1049,23 +1027,35 @@ namespace Abot2.Tests.Unit.Crawler
             {
                 RequestMessage = httpRequestMessage
             };
-            httpResponseMessage.Headers.Add("Retry-After", $"{DateTime.Now.AddSeconds(3):ddd,' 'dd' 'MMM' 'yyyy' 'HH':'mm':'ss' 'K}");
+            httpResponseMessage.Headers.RetryAfter = retryAfter(time);
             var page = new CrawledPage(_rootUri)
             {
                 HttpRequestException = new HttpRequestException("aaa"),
                 HttpRequestMessage = httpRequestMessage,
                 HttpResponseMessage = httpResponseMessage
             };
+            var requests = 0;
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()))
+                .Callback(() => Interlocked.Increment(ref requests))
+                .Returns(Task.FromResult(page));
 
-            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(page));
+            var retryWaiting = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            time.TimerScheduled += () => retryWaiting.TrySetResult(true);
 
-            var watch = new Stopwatch();
-            watch.Start();
-            await _unitUnderTest.CrawlAsync(_rootUri);
-            watch.Stop();
+            using (TestContext.CancellationToken.Register(() => retryWaiting.TrySetCanceled(TestContext.CancellationToken)))
+            {
+                var crawl = _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
+                await retryWaiting.Task;
 
-            Assert.IsGreaterThan(2000, watch.ElapsedMilliseconds);
-            Assert.IsTrue(page.RetryAfter > 0);
+                time.Advance(TimeSpan.FromMilliseconds(expectedWaitInMilliseconds - 1));
+                Assert.AreEqual(1, Volatile.Read(ref requests), "The retry should still be waiting");
+
+                time.Advance(TimeSpan.FromMilliseconds(1));
+                await crawl;
+            }
+
+            Assert.AreEqual(2, requests);
+            Assert.AreEqual(expectedWaitInMilliseconds / 1000.0, page.RetryAfter);
             _fakeCrawlDecisionMaker.Verify(f => f.ShouldRecrawlPage(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>()), Times.Exactly(2));
         }
 
@@ -1090,7 +1080,7 @@ namespace Abot2.Tests.Unit.Crawler
             };
             _fakeHttpRequester.Setup(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>())).Returns(Task.FromResult(page));
 
-            var result = await _unitUnderTest.CrawlAsync(_rootUri);
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
 
             Assert.AreEqual(result.CrawlContext.RootUri, redirectedUri);
             Assert.AreEqual(result.CrawlContext.OriginalRootUri, _rootUri);
@@ -1120,26 +1110,39 @@ namespace Abot2.Tests.Unit.Crawler
         [TestMethod]
         public void Dispose_DoesNotDisposeImplementationsPassedIn()
         {
-            var fakeThreadManager = new Mock<IThreadManager>();
             var fakeScheduler = new Mock<IScheduler>();
             _dummyConfiguration.MaxMemoryUsageInMb = 1000;
-            var unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, fakeThreadManager.Object, fakeScheduler.Object, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
+            var unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, fakeScheduler.Object, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
 
             unitUnderTest.Dispose();
 
-            fakeThreadManager.Verify(f => f.Dispose(), Times.Never);
-            fakeThreadManager.Verify(f => f.AbortAll(), Times.Once);
             fakeScheduler.Verify(f => f.Dispose(), Times.Never);
             _fakeHttpRequester.Verify(f => f.Dispose(), Times.Never);
             _fakeMemoryManager.Verify(f => f.Dispose(), Times.Never);
         }
+
+        //The obsolete constructor still works: the thread manager passed in only sets the concurrency, and is neither used nor disposed
+#pragma warning disable CS0618
+        [TestMethod]
+        public void ObsoleteConstructorWithThreadManager_DoesNotUseOrDisposeIt()
+        {
+            var fakeThreadManager = new Mock<IThreadManager>();
+            fakeThreadManager.Setup(f => f.MaxThreads).Returns(3);
+            var unitUnderTest = new PoliteWebCrawler(_dummyConfiguration, _fakeCrawlDecisionMaker.Object, fakeThreadManager.Object, _dummyScheduler, _fakeHttpRequester.Object, _fakeHtmlParser.Object, _fakeMemoryManager.Object, _fakeDomainRateLimiter.Object, _fakeRobotsDotTextFinder.Object);
+
+            unitUnderTest.Dispose();
+
+            fakeThreadManager.Verify(f => f.DoWork(It.IsAny<Action>()), Times.Never);
+            fakeThreadManager.Verify(f => f.Dispose(), Times.Never);
+        }
+#pragma warning restore CS0618
 
         [TestMethod]
         public async Task CrawlAsync_AfterDispose_ThrowsObjectDisposedException()
         {
             _unitUnderTest.Dispose();
 
-            await Assert.ThrowsExactlyAsync<ObjectDisposedException>(() => _unitUnderTest.CrawlAsync(_rootUri));
+            await Assert.ThrowsExactlyAsync<ObjectDisposedException>(() => _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken));
         }
 
         [TestMethod]
@@ -1156,9 +1159,9 @@ namespace Abot2.Tests.Unit.Crawler
         //Signals once the crawl timeout has hard-stopped the crawl, so a test can wait for it instead of sleeping
         private class TimeoutSignallingCrawler : PoliteWebCrawler
         {
-            public TimeoutSignallingCrawler(CrawlConfiguration crawlConfiguration, ICrawlDecisionMaker crawlDecisionMaker, IThreadManager threadManager, IScheduler scheduler,
+            public TimeoutSignallingCrawler(CrawlConfiguration crawlConfiguration, ICrawlDecisionMaker crawlDecisionMaker, IScheduler scheduler,
                 IPageRequester pageRequester, IHtmlParser htmlParser, IMemoryManager memoryManager, IDomainRateLimiter domainRateLimiter, IRobotsDotTextFinder robotsDotTextFinder)
-                : base(crawlConfiguration, crawlDecisionMaker, threadManager, scheduler, pageRequester, htmlParser, memoryManager, domainRateLimiter, robotsDotTextFinder)
+                : base(crawlConfiguration, crawlDecisionMaker, scheduler, pageRequester, htmlParser, memoryManager, domainRateLimiter, robotsDotTextFinder)
             {
             }
 

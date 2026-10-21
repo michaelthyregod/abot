@@ -7,6 +7,7 @@ namespace Abot2.Util
     /// <summary>
     /// Handles the multithreading implementation details
     /// </summary>
+    [Obsolete("Abot no longer uses thread managers: the crawler processes pages on its own async workers, limited by CrawlConfiguration.MaxConcurrentThreads. For your own work, use Task.Run with SemaphoreSlim.WaitAsync, or Parallel.ForEachAsync on .NET 6 and later.")]
     public interface IThreadManager : IDisposable
     {
         /// <summary>
@@ -30,6 +31,7 @@ namespace Abot2.Util
         void AbortAll();
     }
 
+    [Obsolete("Abot no longer uses thread managers: the crawler processes pages on its own async workers, limited by CrawlConfiguration.MaxConcurrentThreads. For your own work, use Task.Run with SemaphoreSlim.WaitAsync, or Parallel.ForEachAsync on .NET 6 and later.")]
     public abstract class ThreadManager : IThreadManager
     {
         protected bool _abortAllCalled = false;
