@@ -81,7 +81,7 @@ namespace Abot2.Tests.Unit.Crawler
 
             await _unitUnderTest.CrawlAsync(_rootUri);
 
-            _fakeDomainRateLimiter.Verify(f => f.RateLimit(It.IsAny<Uri>()), Times.Exactly(1));
+            _fakeDomainRateLimiter.Verify(f => f.RateLimitAsync(It.IsAny<Uri>(), It.IsAny<CancellationToken>()), Times.Exactly(1));
         }
 
         [TestMethod]
@@ -119,7 +119,7 @@ namespace Abot2.Tests.Unit.Crawler
 
             await _unitUnderTest.CrawlAsync(_rootUri);
 
-            _fakeDomainRateLimiter.Verify(f => f.RateLimit(It.IsAny<Uri>()), Times.Exactly(3));//BY HAVING A CRAWL DELAY ABOVE ZERO WE EXPECT THE IDOMAINRATELIMITER TO BE CALLED
+            _fakeDomainRateLimiter.Verify(f => f.RateLimitAsync(It.IsAny<Uri>(), It.IsAny<CancellationToken>()), Times.Exactly(3));//BY HAVING A CRAWL DELAY ABOVE ZERO WE EXPECT THE IDOMAINRATELIMITER TO BE CALLED
         }
 
         [TestMethod]
@@ -166,7 +166,7 @@ namespace Abot2.Tests.Unit.Crawler
             _fakeRobotsDotText.VerifyAll();
             _fakeRobotsDotTextFinder.VerifyAll();
             _fakeDomainRateLimiter.Verify(f => f.AddDomain(It.IsAny<Uri>(), It.IsAny<long>()), Times.Exactly(0));
-            _fakeDomainRateLimiter.Verify(f => f.RateLimit(It.IsAny<Uri>()), Times.Exactly(3));
+            _fakeDomainRateLimiter.Verify(f => f.RateLimitAsync(It.IsAny<Uri>(), It.IsAny<CancellationToken>()), Times.Exactly(3));
         }
 
         [TestMethod]
@@ -213,7 +213,7 @@ namespace Abot2.Tests.Unit.Crawler
             _fakeRobotsDotText.VerifyAll();
             _fakeRobotsDotTextFinder.VerifyAll();
             _fakeDomainRateLimiter.Verify(f => f.AddDomain(It.IsAny<Uri>(), 3000), Times.Exactly(1));
-            _fakeDomainRateLimiter.Verify(f => f.RateLimit(It.IsAny<Uri>()), Times.Exactly(3));//BY HAVING A CRAWL DELAY ABOVE ZERO WE EXPECT THE IDOMAINRATELIMITER TO BE CALLED
+            _fakeDomainRateLimiter.Verify(f => f.RateLimitAsync(It.IsAny<Uri>(), It.IsAny<CancellationToken>()), Times.Exactly(3));//BY HAVING A CRAWL DELAY ABOVE ZERO WE EXPECT THE IDOMAINRATELIMITER TO BE CALLED
         }
 
         [TestMethod]
@@ -261,7 +261,7 @@ namespace Abot2.Tests.Unit.Crawler
             _fakeRobotsDotText.VerifyAll();
             _fakeRobotsDotTextFinder.VerifyAll();
             _fakeDomainRateLimiter.Verify(f => f.AddDomain(It.IsAny<Uri>(), 2000), Times.Exactly(1));
-            _fakeDomainRateLimiter.Verify(f => f.RateLimit(It.IsAny<Uri>()), Times.Exactly(3));//BY HAVING A CRAWL DELAY ABOVE ZERO WE EXPECT THE IDOMAINRATELIMITER TO BE CALLED
+            _fakeDomainRateLimiter.Verify(f => f.RateLimitAsync(It.IsAny<Uri>(), It.IsAny<CancellationToken>()), Times.Exactly(3));//BY HAVING A CRAWL DELAY ABOVE ZERO WE EXPECT THE IDOMAINRATELIMITER TO BE CALLED
         }
 
         [TestMethod]
@@ -288,7 +288,7 @@ namespace Abot2.Tests.Unit.Crawler
             _fakeRobotsDotText.VerifyAll();
             _fakeRobotsDotTextFinder.VerifyAll();
             _fakeDomainRateLimiter.Verify(f => f.AddDomain(It.IsAny<Uri>(), It.IsAny<long>()), Times.Exactly(0));
-            _fakeDomainRateLimiter.Verify(f => f.RateLimit(It.IsAny<Uri>()), Times.Exactly(0));
+            _fakeDomainRateLimiter.Verify(f => f.RateLimitAsync(It.IsAny<Uri>(), It.IsAny<CancellationToken>()), Times.Exactly(0));
         }
 
         [TestMethod]

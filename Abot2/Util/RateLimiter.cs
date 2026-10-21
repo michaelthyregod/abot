@@ -4,6 +4,7 @@ using System.Threading;
 
 namespace Abot2.Util
 {
+    [Obsolete("Abot no longer uses this; it rate limits per domain with DomainRateLimiter.RateLimitAsync, which waits without blocking a thread. For general-purpose rate limiting use System.Threading.RateLimiting.")]
     public interface IRateLimiter
     {
         void WaitToProceed();
@@ -26,6 +27,7 @@ namespace Abot2.Util
     ///     threads.
     ///     </para>
     /// </remarks>
+    [Obsolete("Abot no longer uses this; it rate limits per domain with DomainRateLimiter.RateLimitAsync, which waits without blocking a thread. For general-purpose rate limiting use System.Threading.RateLimiting.")]
     public class RateLimiter : IRateLimiter, IDisposable
     {
         // Semaphore used to count and limit the number of occurrences per

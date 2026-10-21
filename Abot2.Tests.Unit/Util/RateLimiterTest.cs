@@ -3,6 +3,9 @@ using Abot2.Util;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 
+//RateLimiter is obsolete but still supported, so it keeps its tests
+#pragma warning disable CS0618
+
 namespace Abot2.Tests.Unit.Util
 {
     //Waiting is tested on a fake clock that only moves when a test advances it, so results never depend on machine load.

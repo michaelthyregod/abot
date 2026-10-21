@@ -544,6 +544,8 @@ namespace Abot2.Crawler
             Log.Debug("About to crawl page [{0}]", pageToCrawl.Uri.AbsoluteUri);
             FirePageCrawlStartingEvent(pageToCrawl);
 
+            await BeforeRequestAsync(pageToCrawl, _crawlContext.CancellationTokenSource.Token).ConfigureAwait(false);
+
             if (pageToCrawl.IsRetry) { WaitMinimumRetryDelay(pageToCrawl); }
 
             pageToCrawl.LastRequest = DateTime.Now;
@@ -558,6 +560,16 @@ namespace Abot2.Crawler
                 Log.Information("Page crawl complete, Status:[{0}] Url:[{1}] Elapsed:[{2}] Parent:[{3}] Retry:[{4}]", Convert.ToInt32(crawledPage.HttpResponseMessage.StatusCode), crawledPage.Uri.AbsoluteUri, crawledPage.Elapsed, crawledPage.ParentUri, crawledPage.RetryCount);
 
             return crawledPage;
+        }
+
+        /// <summary>
+        /// Runs after the PageCrawlStarting event and before the page is requested. Does nothing here; PoliteWebCrawler rate limits in it.
+        /// </summary>
+        /// <param name="pageToCrawl">The page about to be requested</param>
+        /// <param name="cancellationToken">Cancelled when the crawl is cancelled</param>
+        protected virtual Task BeforeRequestAsync(PageToCrawl pageToCrawl, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
         }
 
         #endregion

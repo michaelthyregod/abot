@@ -128,9 +128,15 @@ namespace Abot2.Crawler
                 _domainRateLimiter.AddDomain(uri, robotsDotTextCrawlDelayInMillisecs);
             }
 
-            PageCrawlStarting += (s, e) => _domainRateLimiter.RateLimit(e.PageToCrawl.Uri);
-
             return await base.CrawlAsync(uri, cancellationTokenSource).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Waits, without blocking a thread, until the page's domain may be requested again
+        /// </summary>
+        protected override Task BeforeRequestAsync(PageToCrawl pageToCrawl, CancellationToken cancellationToken)
+        {
+            return _domainRateLimiter.RateLimitAsync(pageToCrawl.Uri, cancellationToken);
         }
 
         /// <inheritdoc />
