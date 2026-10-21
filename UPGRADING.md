@@ -274,7 +274,9 @@ Your application now gets Serilog 4.4.0 or later. If you use other Serilog sinks
 
 `CrawlConfiguration.HttpServicePointConnectionLimit` (default 200) limits the number of concurrent connections per host. In 2.x it set `ServicePointManager.DefaultConnectionLimit`, which has no effect on `HttpClient` on .NET Core and later, so on modern .NET the limit was silently ignored.
 
-On the `net10.0` build it now sets `HttpClientHandler.MaxConnectionsPerServer`, so a crawl on .NET 10 or later really is limited to 200 connections per host by default. Nothing changes on the other builds: on .NET Framework (`net462`) the limit works as before, and on .NET Core 2.0 to .NET 9 (`netstandard2.0`) it is still ignored.
+On the `net10.0` build it now sets `HttpClientHandler.MaxConnectionsPerServer`, so a crawl on .NET 10 or later really is limited to 200 connections per host by default. That limit applies only to the crawler's own `HttpClient`. Nothing changes on the other builds: on .NET Framework (`net462`) the limit works as before, and on .NET Core 2.0 to .NET 9 (`netstandard2.0`) it is still ignored.
+
+On those other builds, Abot still sets `ServicePointManager.DefaultConnectionLimit` whenever a `PageRequester` is created, as 2.x did. That setting is process-wide: on .NET Framework it changes the limit for every `HttpClient` and `HttpWebRequest` in your application, and the last crawler created wins. If your application relies on its own value, set `HttpServicePointConnectionLimit` to `0`, so that Abot leaves it alone.
 
 To keep the 2.x behaviour on .NET 10 (no limit set by Abot), set it to `0`:
 
@@ -298,6 +300,8 @@ In 2.x, an exception thrown while getting or processing a page could escape the 
 - The crawl is hard-stopped.
 
 Cancellation is still reported as before: `ErrorOccurred` is `true` and `ErrorException` is an `OperationCanceledException`.
+
+The same now applies to exceptions while a page's links or redirect are being scheduled, for example from your `ICrawlDecisionMaker` or your scheduler. In 2.x they were swallowed without a trace, and the link or redirect was silently dropped. Only links and redirect targets that are not valid URIs are still skipped without an error; they are now logged as a warning.
 
 ```csharp
 var result = await crawler.CrawlAsync(new Uri("https://example.com/"));
@@ -334,6 +338,7 @@ These need no action, but may change what you observe:
 - A `RateLimiter` with a time unit of zero no longer keeps a thread busy. In 2.x its timer rescheduled itself with no delay for as long as the limiter existed.
 - `CompactCrawledUrlRepository`, the default crawled-URL store, now identifies URLs by a 64-bit hash that is the same in every process. 2.x used `Uri.GetHashCode()`: only 32 bits, so different URLs could share a hash (about 100 pairs per million URLs) and the second page was skipped as already crawled. On .NET Core and later that hash is also seeded randomly per process, so which page was skipped changed from run to run. Which URLs count as duplicates is unchanged.
 - `BloomFilter<string>` (used by `BloomFilterCrawledUrlRepository`) no longer uses `string.GetHashCode()`, so its results are the same on every run.
+- When a page declares a charset that .NET doesn't know, the warning now includes the charset. 2.x logged a broken message template instead.
 
 ### 5.8 Abot can run on a clock you control
 
@@ -358,6 +363,10 @@ await second;                                     // completes exactly when the 
 ```
 
 A crawler built with a fake clock only times out, finishes politeness and retry waits, and moves its timestamps when you advance the clock.
+
+### 5.9 `Constants.LogFormatTemplate` is read-only
+
+`Constants.LogFormatTemplate` is now `static readonly`. Reading it works as before. Code that assigns it no longer compiles; use your own template string instead.
 
 ## 6. Async crawl engine and cancellation
 
@@ -521,3 +530,5 @@ Other changes for subclasses:
 11. If you implement Abot's interfaces, add the `CancellationToken` parameters and honour them, and update `IScheduler` implementations for `bool AddKnownUri` and `AddKnownPage` ([section 6.3](#63-interface-changes)).
 12. If you derive from `WebCrawler`, fix every `CS0672` warning by overriding the `CancellationToken` overload instead: the crawler no longer calls the old ones ([section 6.4](#64-classes-that-derive-from-webcrawler)). If you derive from `DomainRateLimiter`, move `GetRateLimiter` overrides to `GetDomainSchedule` ([section 6.5](#65-classes-that-derive-from-domainratelimiter)).
 13. Recompile everything that references Abot, because method signatures changed.
+14. If your crawl decision maker or scheduler can throw while links are scheduled, expect the crawl to stop with that error instead of silently dropping the link ([section 5.3](#53-errors-during-a-crawl-no-longer-crash-the-process)).
+15. On .NET Framework, set `HttpServicePointConnectionLimit` to `0` if your application sets `ServicePointManager.DefaultConnectionLimit` itself ([section 5.1](#51-httpservicepointconnectionlimit-now-works-on-net-10)).

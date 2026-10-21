@@ -7,6 +7,7 @@ using Moq;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http;
@@ -1125,6 +1126,94 @@ namespace Abot2.Tests.Unit.Crawler
             Assert.AreEqual(2, requests);
             Assert.AreEqual(expectedWaitInMilliseconds / 1000.0, page.RetryAfter);
             _fakeCrawlDecisionMaker.Verify(f => f.ShouldRecrawlPage(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>()), Times.Exactly(2));
+        }
+
+        [TestMethod]
+        public async Task Crawl_LinkThatIsNotAValidUri_IsSkippedAndTheCrawlContinues()
+        {
+            var invalidLink = new Uri("http://a.com/invalid");
+            var validLink = new Uri("http://a.com/valid");
+            SetUpCrawlOfLinks(invalidLink, validLink);
+            //Some uris parse but throw on use, which the crawler meets when it decides whether the link is internal
+            _unitUnderTest.IsInternalUriDecisionMaker = (uri, rootUri) => uri == invalidLink ? throw new UriFormatException("Invalid host") : uri.Authority == rootUri.Authority;
+
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
+
+            Assert.IsFalse(result.ErrorOccurred);
+            Assert.IsFalse(result.CrawlContext.IsCrawlHardStopRequested);
+            _fakeHttpRequester.Verify(f => f.MakeRequestAsync(validLink, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()), Times.Once());
+            _fakeHttpRequester.Verify(f => f.MakeRequestAsync(invalidLink, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()), Times.Never());
+        }
+
+        [TestMethod]
+        public async Task Crawl_DecisionMakerThrowsForALink_CrawlStopsWithTheError()
+        {
+            var link = new Uri("http://a.com/page");
+            SetUpCrawlOfLinks(link);
+            var error = new InvalidOperationException("Decision maker failed");
+            _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.Is<PageToCrawl>(p => p.Uri == link), It.IsAny<CrawlContext>())).Throws(error);
+
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
+
+            Assert.AreSame(error, result.ErrorException);
+            Assert.IsTrue(result.CrawlContext.IsCrawlHardStopRequested);
+        }
+
+        [TestMethod]
+        public async Task Crawl_RedirectToUriThatIsNotValid_IsNotFollowedAndTheCrawlContinues()
+        {
+            var redirectingPage = new Uri("http://a.com/redirecting");
+            var redirectTarget = new Uri("http://a.com/target");
+            SetUpCrawlOfLinks(redirectingPage);
+            SetUpRedirect(redirectingPage, redirectTarget);
+            _unitUnderTest.IsInternalUriDecisionMaker = (uri, rootUri) => uri == redirectTarget ? throw new UriFormatException("Invalid host") : uri.Authority == rootUri.Authority;
+
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
+
+            Assert.IsFalse(result.ErrorOccurred);
+            Assert.IsFalse(result.CrawlContext.IsCrawlHardStopRequested);
+            _fakeHttpRequester.Verify(f => f.MakeRequestAsync(redirectTarget, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()), Times.Never());
+        }
+
+        [TestMethod]
+        public async Task Crawl_DecisionMakerThrowsForARedirectTarget_CrawlStopsWithTheError()
+        {
+            var redirectingPage = new Uri("http://a.com/redirecting");
+            var redirectTarget = new Uri("http://a.com/target");
+            SetUpCrawlOfLinks(redirectingPage);
+            SetUpRedirect(redirectingPage, redirectTarget);
+            var error = new InvalidOperationException("Decision maker failed");
+            _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.Is<PageToCrawl>(p => p.Uri == redirectTarget), It.IsAny<CrawlContext>())).Throws(error);
+
+            var result = await _unitUnderTest.CrawlAsync(_rootUri, TestContext.CancellationToken);
+
+            Assert.AreSame(error, result.ErrorException);
+            Assert.IsTrue(result.CrawlContext.IsCrawlHardStopRequested);
+        }
+
+        //The root links to the given pages, which have no links themselves; every page is allowed and answers 200
+        private void SetUpCrawlOfLinks(params Uri[] links)
+        {
+            _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
+            _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPageLinks(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
+            _fakeCrawlDecisionMaker.Setup(f => f.ShouldRecrawlPage(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = false });
+            _fakeHtmlParser.Setup(f => f.GetLinks(It.Is<CrawledPage>(p => p.Uri == _rootUri))).Returns(links.Select(link => new HyperLink { HrefValue = link }).ToList());
+            _fakeHtmlParser.Setup(f => f.GetLinks(It.Is<CrawledPage>(p => p.Uri != _rootUri))).Returns(new List<HyperLink>());
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(It.IsAny<Uri>(), It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()))
+                .Returns<Uri, Func<CrawledPage, CrawlDecision>, CancellationToken>((uri, shouldDownloadContent, cancellationToken) => Task.FromResult(new CrawledPage(uri)));
+        }
+
+        //The page answers 302 to the target, and the crawler follows redirects itself
+        private void SetUpRedirect(Uri page, Uri target)
+        {
+            _dummyConfiguration.IsHttpRequestAutoRedirectsEnabled = false;
+            _fakeHttpRequester.Setup(f => f.MakeRequestAsync(page, It.IsAny<Func<CrawledPage, CrawlDecision>>(), It.IsAny<CancellationToken>()))
+                .Returns(() =>
+                {
+                    var response = new HttpResponseMessage(HttpStatusCode.Redirect) { RequestMessage = new HttpRequestMessage { RequestUri = page } };
+                    response.Headers.Location = target;
+                    return Task.FromResult(new CrawledPage(page) { HttpRequestMessage = response.RequestMessage, HttpResponseMessage = response });
+                });
         }
 
         [TestMethod]

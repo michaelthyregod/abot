@@ -108,9 +108,9 @@ namespace Abot2.Core
             {
                 e = Encoding.GetEncoding(charset);
             }
-            catch
+            catch (Exception ex) when (ex is ArgumentException || ex is NotSupportedException)
             {
-                Log.Warning("Could not get Encoding for charset string [0]", charset);
+                Log.Warning("Could not get Encoding for charset string [{0}], using UTF-8", charset);
             }
 
             return e;

@@ -916,7 +916,11 @@ namespace Abot2.Crawler
                 if ((_scheduler.AddKnownUri(page.Uri) || _crawlContext.CrawlConfiguration.IsUriRecrawlingEnabled) && ScheduleKnownPage(page))
                     Log.Information("Page [{0}] will be redirect to [{1}]", crawledPage.Uri, crawledPage.RedirectedTo.Uri);
             }
-            catch {}
+            catch (UriFormatException e)
+            {
+                //A malformed Location header is the server's problem, not a crawl error: skip the redirect
+                Log.Warning(e, "Page [{0}] redirects to an invalid uri, the redirect is not followed", crawledPage.Uri);
+            }
         }
 
         protected virtual bool IsInternalUri(Uri uri)
@@ -1086,7 +1090,7 @@ namespace Abot2.Crawler
 
                 if (ShouldScheduleLinkDecisionMaker == null || ShouldScheduleLinkDecisionMaker.Invoke(hyperLink.HrefValue, crawledPage, _crawlContext))
                 {
-                    try //Added due to a bug in the Uri class related to this (http://stackoverflow.com/questions/2814951/system-uriformatexception-invalid-uri-the-hostname-could-not-be-parsed)
+                    try
                     {
                         var page = new PageToCrawl(hyperLink.HrefValue);
                         page.ParentUri = crawledPage.Uri;
@@ -1097,7 +1101,12 @@ namespace Abot2.Crawler
                         if (ScheduleKnownPage(page))
                             linksToCrawl++;
                     }
-                    catch { }
+                    catch (UriFormatException e)
+                    {
+                        //Some uris parse but throw on use, for example when their host name cannot be parsed
+                        //(http://stackoverflow.com/questions/2814951/system-uriformatexception-invalid-uri-the-hostname-could-not-be-parsed)
+                        Log.Warning(e, "Link [{0}] on page [{1}] is not a valid uri and is skipped", hyperLink.HrefValue, crawledPage.Uri);
+                    }
                 }
 
                 if (!ShouldScheduleMorePageLink(linksToCrawl))

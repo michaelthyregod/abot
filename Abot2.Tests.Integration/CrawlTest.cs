@@ -118,10 +118,10 @@ namespace Abot2.Tests.Integration
         [TestMethod]
         public async Task Crawl_Synchronous_CancellationTokenCancelled_StopsCrawl()
         {
-            var cancellationTokenSource = new CancellationTokenSource();
-
             //A slow server: the first request is held, the crawl is cancelled while waiting for it, then the response arrives
+            using (var cancellationTokenSource = new CancellationTokenSource())
             using (var site = await TestSite.StartHoldingResponsesAsync(TestContext.CancellationToken))
+            using (var crawler = new PoliteWebCrawler())
             {
                 site.RequestReceived += uri =>
                 {
@@ -129,7 +129,6 @@ namespace Abot2.Tests.Integration
                     site.ReleaseResponses();
                 };
 
-                var crawler = new PoliteWebCrawler();
                 var result = await crawler.CrawlAsync(site.BaseUri, cancellationTokenSource.Token);
 
                 Assert.IsTrue(result.ErrorOccurred);
@@ -138,12 +137,12 @@ namespace Abot2.Tests.Integration
         }
 
         [TestMethod]
-        public void Crawl_Asynchronous_CancellationTokenCancelled_StopsCrawl()
+        public async Task Crawl_Asynchronous_CancellationTokenCancelled_StopsCrawl()
         {
-            var cancellationTokenSource = new CancellationTokenSource();
-
             //A slow server: the first request is held, the crawl is cancelled while waiting for it, then the response arrives
-            using (var site = TestSite.StartHoldingResponsesAsync(TestContext.CancellationToken).Result)
+            using (var cancellationTokenSource = new CancellationTokenSource())
+            using (var site = await TestSite.StartHoldingResponsesAsync(TestContext.CancellationToken))
+            using (var crawler = new PoliteWebCrawler())
             {
                 site.RequestReceived += uri =>
                 {
@@ -151,9 +150,8 @@ namespace Abot2.Tests.Integration
                     site.ReleaseResponses();
                 };
 
-                var crawler = new PoliteWebCrawler();
-                var task = Task.Factory.StartNew<CrawlResult>( () => crawler.CrawlAsync(site.BaseUri, cancellationTokenSource.Token).Result);
-                var result = task.Result;
+                //The crawl runs on another task, as when an application starts it in the background
+                var result = await Task.Run(() => crawler.CrawlAsync(site.BaseUri, cancellationTokenSource.Token), TestContext.CancellationToken);
 
                 Assert.IsTrue(result.ErrorOccurred);
                 Assert.IsTrue(result.ErrorException is OperationCanceledException);
