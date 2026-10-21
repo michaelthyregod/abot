@@ -4,6 +4,8 @@
     <TargetFrameworks>netstandard2.0;net10.0</TargetFrameworks>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Not every public member has an XML comment yet -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
     <Version>3.0.0-preview.1</Version>
     <PackageId>Abot</PackageId>
     <Authors>Steven Jones</Authors>
