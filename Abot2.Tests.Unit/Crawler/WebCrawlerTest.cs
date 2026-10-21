@@ -957,10 +957,10 @@ namespace Abot2.Tests.Unit.Crawler
             var watch = new Stopwatch();
             watch.Start();
             await _unitUnderTest.CrawlAsync(_rootUri);
-            watch.Start();
+            watch.Stop();
 
             Assert.IsTrue(watch.ElapsedMilliseconds > 2000);
-            Assert.AreEqual(page.RetryAfter, 1.0);
+            Assert.AreEqual(1.0, page.RetryAfter);
             _fakeCrawlDecisionMaker.Verify(f => f.ShouldRecrawlPage(It.IsAny<CrawledPage>(), It.IsAny<CrawlContext>()), Times.Exactly(2));
         }
 

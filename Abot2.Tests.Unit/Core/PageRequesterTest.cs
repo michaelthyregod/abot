@@ -80,8 +80,8 @@ namespace Abot2.Tests.Unit.Core
             Assert.AreSame(dummyHttpResponseMessage, result.HttpResponseMessage);
             Assert.AreSame(dummyPageContent, result.Content);
 
-            Assert.IsNotNull(result.RequestStarted);
-            Assert.IsNotNull(result.RequestCompleted);
+            Assert.AreNotEqual(default, result.RequestStarted);
+            Assert.AreNotEqual(default, result.RequestCompleted);
             Assert.IsNotNull(result.DownloadContentStarted);
             Assert.IsNotNull(result.DownloadContentCompleted);
 
@@ -123,8 +123,8 @@ namespace Abot2.Tests.Unit.Core
             Assert.IsNull(result.Content.Encoding);
 
             Assert.IsNotNull(result.HttpRequestException);
-            Assert.IsNotNull(result.RequestStarted);
-            Assert.IsNotNull(result.RequestCompleted);
+            Assert.AreNotEqual(default, result.RequestStarted);
+            Assert.AreNotEqual(default, result.RequestCompleted);
             Assert.IsTrue(result.RequestStarted < result.RequestCompleted);
         }
 
@@ -163,8 +163,8 @@ namespace Abot2.Tests.Unit.Core
             Assert.IsTrue(result.HttpRequestException.Message.StartsWith("Request timeout occurred"));
             Assert.IsNotNull(result.HttpRequestException.InnerException);
             Assert.AreEqual("Oh no timeout", result.HttpRequestException.InnerException.Message);
-            Assert.IsNotNull(result.RequestStarted);
-            Assert.IsNotNull(result.RequestCompleted);
+            Assert.AreNotEqual(default, result.RequestStarted);
+            Assert.AreNotEqual(default, result.RequestCompleted);
             Assert.IsTrue(result.RequestStarted < result.RequestCompleted);
         }
 
@@ -202,8 +202,8 @@ namespace Abot2.Tests.Unit.Core
             Assert.IsNotNull(result.HttpRequestException);
             Assert.IsTrue(result.HttpRequestException.Message.StartsWith("Unknown error occurred"));
             Assert.AreEqual("Oh no", result.HttpRequestException.InnerException.Message);
-            Assert.IsNotNull(result.RequestStarted);
-            Assert.IsNotNull(result.RequestCompleted);
+            Assert.AreNotEqual(default, result.RequestStarted);
+            Assert.AreNotEqual(default, result.RequestCompleted);
             Assert.IsTrue(result.RequestStarted < result.RequestCompleted);
         }
 
@@ -240,8 +240,8 @@ namespace Abot2.Tests.Unit.Core
             Assert.AreSame(dummyHttpResponseMessage, result.HttpResponseMessage);
             Assert.IsNotNull(result.Content);
 
-            Assert.IsNotNull(result.RequestStarted);
-            Assert.IsNotNull(result.RequestCompleted);
+            Assert.AreNotEqual(default, result.RequestStarted);
+            Assert.AreNotEqual(default, result.RequestCompleted);
             Assert.IsNotNull(result.DownloadContentStarted);
             Assert.IsNull(result.DownloadContentCompleted);
 
