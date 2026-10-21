@@ -759,7 +759,10 @@ namespace Abot2.Tests.Unit.Crawler
             for (var i = 0; i < 100; i++)
                 _dummyScheduler.Add(pageToReturn);
 
-            _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>())).Returns(new CrawlDecision { Allow = true });
+            //Slow enough that the timer above always cancels while the crawl is still running
+            _fakeCrawlDecisionMaker.Setup(f => f.ShouldCrawlPage(It.IsAny<PageToCrawl>(), It.IsAny<CrawlContext>()))
+                .Callback(() => Thread.Sleep(200))
+                .Returns(new CrawlDecision { Allow = true });
 
             //Act
             var result = await _unitUnderTest.CrawlAsync(_rootUri, cancellationTokenSource);
